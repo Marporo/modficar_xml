@@ -53,8 +53,6 @@ class AplicacionXML(tk.Tk):
         
         # Inicialización de listas y diccionarios
         self.historial_cambios = []
-        self.favoritos = []
-        self.configuraciones = {}
         
         # Crear notebook para pestañas
         self.notebook = ttk.Notebook(self)
@@ -63,24 +61,14 @@ class AplicacionXML(tk.Tk):
         # Crear pestañas
         self.pestaña_principal = ttk.Frame(self.notebook)
         self.pestaña_historial = ttk.Frame(self.notebook)
-        self.pestaña_favoritos = ttk.Frame(self.notebook)
-        self.pestaña_configuracion = ttk.Frame(self.notebook)
         
         # Agregar pestañas al notebook
         self.notebook.add(self.pestaña_principal, text="Modificar XML")
         self.notebook.add(self.pestaña_historial, text="Historial")
-        self.notebook.add(self.pestaña_favoritos, text="Favoritos")
-        self.notebook.add(self.pestaña_configuracion, text="Configuración")
         
         # Configurar cada pestaña
         self.configurar_pestaña_principal()
         self.configurar_pestaña_historial()
-        self.configurar_pestaña_favoritos()
-        self.configurar_pestaña_configuracion()
-        
-        # Cargar datos guardados
-        self.cargar_favoritos()
-        self.cargar_configuraciones()
         
         # Centrar la ventana
         self.center_window()
@@ -99,8 +87,11 @@ class AplicacionXML(tk.Tk):
         main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
         # Título
-        titulo = ttk.Label(main_frame, text="Modificador Avanzado de XML", style='Title.TLabel')
-        titulo.pack(pady=(0, 20))
+        titulo = ttk.Label(main_frame, text="Modificador Avanzado de XML", 
+                          style='Title.TLabel',
+                          font=(ModernoTema.FONT_FAMILY, ModernoTema.TITLE_SIZE + 4, 'bold'),
+                          foreground='#0066cc')  # Azul
+        titulo.pack(pady=(0, 25))
         
         # Frame para selección de modo y archivo/directorio
         seleccion_frame = ttk.Frame(main_frame)
@@ -216,53 +207,6 @@ class AplicacionXML(tk.Tk):
         ttk.Button(btn_frame, text="Exportar", command=self.exportar_historial, 
                   style='Secondary.TButton').pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Limpiar", command=self.limpiar_historial, 
-                  style='Secondary.TButton').pack(side=tk.LEFT, padx=5)
-    
-    def configurar_pestaña_favoritos(self):
-        # Frame principal
-        main_frame = ttk.Frame(self.pestaña_favoritos)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-        
-        # Lista de favoritos
-        self.favoritos_tree = ttk.Treeview(main_frame, columns=("archivo", "ruta"), show="headings")
-        self.favoritos_tree.heading("archivo", text="Archivo")
-        self.favoritos_tree.heading("ruta", text="Ruta")
-        
-        self.favoritos_tree.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        # Botones
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Button(btn_frame, text="Abrir", command=self.abrir_favorito, 
-                  style='Secondary.TButton').pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Eliminar", command=self.eliminar_favorito, 
-                  style='Secondary.TButton').pack(side=tk.LEFT, padx=5)
-    
-    def configurar_pestaña_configuracion(self):
-        # Frame principal
-        main_frame = ttk.Frame(self.pestaña_configuracion)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-        
-        # Configuraciones guardadas
-        config_frame = ttk.LabelFrame(main_frame, text="Configuraciones guardadas")
-        config_frame.pack(fill=tk.X, pady=5)
-        
-        self.config_tree = ttk.Treeview(config_frame, columns=("nombre", "descripcion"), show="headings")
-        self.config_tree.heading("nombre", text="Nombre")
-        self.config_tree.heading("descripcion", text="Descripción")
-        
-        self.config_tree.pack(fill=tk.X, pady=5)
-        
-        # Botones de configuración
-        btn_frame = ttk.Frame(config_frame)
-        btn_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Button(btn_frame, text="Cargar", command=self.cargar_configuracion, 
-                  style='Secondary.TButton').pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Guardar", command=self.guardar_configuracion, 
-                  style='Secondary.TButton').pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Eliminar", command=self.eliminar_configuracion, 
                   style='Secondary.TButton').pack(side=tk.LEFT, padx=5)
     
     def cambiar_modo(self):
@@ -460,100 +404,6 @@ class AplicacionXML(tk.Tk):
             self.historial_cambios = []
             for item in self.historial_tree.get_children():
                 self.historial_tree.delete(item)
-    
-    def cargar_favoritos(self):
-        try:
-            with open('favoritos.json', 'r') as f:
-                self.favoritos = json.load(f)
-                for favorito in self.favoritos:
-                    self.favoritos_tree.insert('', 'end', values=(
-                        os.path.basename(favorito),
-                        favorito
-                    ))
-        except FileNotFoundError:
-            pass
-    
-    def guardar_favoritos(self):
-        with open('favoritos.json', 'w') as f:
-            json.dump(self.favoritos, f, indent=4)
-    
-    def abrir_favorito(self):
-        seleccion = self.favoritos_tree.selection()
-        if seleccion:
-            archivo = self.favoritos_tree.item(seleccion[0])['values'][1]
-            self.archivo_seleccionado.set(archivo)
-            self.modo_multiple.set(False)
-            self.cambiar_modo()
-            self.notebook.select(0)  # Ir a la pestaña principal
-    
-    def eliminar_favorito(self):
-        seleccion = self.favoritos_tree.selection()
-        if seleccion:
-            archivo = self.favoritos_tree.item(seleccion[0])['values'][1]
-            self.favoritos.remove(archivo)
-            self.favoritos_tree.delete(seleccion[0])
-            self.guardar_favoritos()
-    
-    def cargar_configuraciones(self):
-        try:
-            with open('configuraciones.json', 'r') as f:
-                self.configuraciones = json.load(f)
-                for nombre, config in self.configuraciones.items():
-                    self.config_tree.insert('', 'end', values=(
-                        nombre,
-                        config.get('descripcion', '')
-                    ))
-        except FileNotFoundError:
-            pass
-    
-    def guardar_configuracion(self):
-        nombre = simpledialog.askstring("Guardar configuración", "Nombre de la configuración:")
-        if nombre:
-            descripcion = simpledialog.askstring("Guardar configuración", "Descripción:")
-            if descripcion:
-                config = {
-                    'descripcion': descripcion,
-                    'modo_multiple': self.modo_multiple.get(),
-                    'archivo': self.archivo_seleccionado.get(),
-                    'directorio': self.directorio_seleccionado.get(),
-                    'etiqueta': self.etiqueta.get(),
-                    'valor_actual': self.valor_actual.get(),
-                    'valor_nuevo': self.valor_nuevo.get(),
-                    'usar_regex': self.usar_regex.get()
-                }
-                
-                self.configuraciones[nombre] = config
-                self.config_tree.insert('', 'end', values=(nombre, descripcion))
-                
-                with open('configuraciones.json', 'w') as f:
-                    json.dump(self.configuraciones, f, indent=4)
-    
-    def cargar_configuracion(self):
-        seleccion = self.config_tree.selection()
-        if seleccion:
-            nombre = self.config_tree.item(seleccion[0])['values'][0]
-            config = self.configuraciones[nombre]
-            
-            self.modo_multiple.set(config['modo_multiple'])
-            self.archivo_seleccionado.set(config['archivo'])
-            self.directorio_seleccionado.set(config['directorio'])
-            self.etiqueta.set(config['etiqueta'])
-            self.valor_actual.set(config['valor_actual'])
-            self.valor_nuevo.set(config['valor_nuevo'])
-            self.usar_regex.set(config['usar_regex'])
-            
-            self.cambiar_modo()
-    
-    def eliminar_configuracion(self):
-        seleccion = self.config_tree.selection()
-        if seleccion:
-            nombre = self.config_tree.item(seleccion[0])['values'][0]
-            if messagebox.askyesno("Confirmar", f"¿Desea eliminar la configuración '{nombre}'?"):
-                del self.configuraciones[nombre]
-                self.config_tree.delete(seleccion[0])
-                
-                with open('configuraciones.json', 'w') as f:
-                    json.dump(self.configuraciones, f, indent=4)
 
     def mostrar_ayuda_regex(self):
         """Muestra una ventana de ayuda con información sobre expresiones regulares"""
@@ -566,8 +416,18 @@ class AplicacionXML(tk.Tk):
         ventana_ayuda.transient(self)
         ventana_ayuda.grab_set()
         
-        # Permitir que la ventana sea redimensionable
+        # Permitir que la ventana sea redimensionable y maximizable
         ventana_ayuda.resizable(True, True)
+        
+        # Configurar el comportamiento de maximización
+        def toggle_maximize(event=None):
+            if ventana_ayuda.state() == 'zoomed':
+                ventana_ayuda.state('normal')
+            else:
+                ventana_ayuda.state('zoomed')
+        
+        # Agregar atajo de teclado para maximizar/restaurar (F11)
+        ventana_ayuda.bind('<F11>', toggle_maximize)
         
         # Frame principal con padding y estilo moderno
         main_frame = ttk.Frame(ventana_ayuda, style='TFrame')
@@ -577,7 +437,7 @@ class AplicacionXML(tk.Tk):
         main_frame.grid_columnconfigure(0, weight=1)
         main_frame.grid_rowconfigure(2, weight=1)  # La fila del texto expandible
         
-        # Título con estilo moderno
+        # Título con estilo moderno y botón de maximizar
         titulo_frame = ttk.Frame(main_frame)
         titulo_frame.grid(row=0, column=0, sticky='ew', pady=(0, 20))
         
@@ -585,6 +445,13 @@ class AplicacionXML(tk.Tk):
                  text="Guía de Expresiones Regulares",
                  style='Title.TLabel',
                  font=(ModernoTema.FONT_FAMILY, ModernoTema.TITLE_SIZE + 2, 'bold')).pack(side=tk.LEFT)
+        
+        # Botón de maximizar
+        ttk.Button(titulo_frame,
+                  text="⛶",
+                  command=toggle_maximize,
+                  style='Secondary.TButton',
+                  width=3).pack(side=tk.RIGHT)
         
         # Crear Text widget con scroll y estilo moderno
         texto_frame = ttk.Frame(main_frame)
@@ -673,9 +540,16 @@ class AplicacionXML(tk.Tk):
         # Hacer el texto de solo lectura
         texto.config(state='disabled')
         
-        # Frame para el botón de cerrar
+        # Frame para los botones
         botones_frame = ttk.Frame(main_frame)
         botones_frame.grid(row=3, column=0, sticky='e', pady=(20, 0))
+        
+        # Botón de maximizar
+        ttk.Button(botones_frame, 
+                  text="Maximizar",
+                  command=toggle_maximize,
+                  style='Secondary.TButton',
+                  width=15).pack(side=tk.LEFT, padx=(0, 10))
         
         # Botón de cerrar con estilo moderno
         ttk.Button(botones_frame, 
