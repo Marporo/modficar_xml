@@ -1,0 +1,9 @@
+2025-04-21 21:52:52,640 - ERROR - Error al cargar XML: '_tkinter.tkapp' object has no attribute 'obtener_etiquetas_unicas_xml'
+2025-04-21 21:54:21,082 - ERROR - Error al cargar XML: '_tkinter.tkapp' object has no attribute 'obtener_etiquetas_unicas_xml'
+2025-04-21 22:04:00,313 - INFO - XML cargado exitosamente: C:/Users/mmarchiori/OneDrive - AXXON CONSULTING/Desktop/testxml/Exportacion WHS Querys-Warehouse location directive lines..xml
+2025-04-21 22:04:17,890 - INFO - XML cargado exitosamente: C:/Users/mmarchiori/OneDrive - AXXON CONSULTING/Desktop/testxml/Exportacion WHS Querys-Warehouse location directives V3..xml
+2025-04-21 22:07:01,987 - ERROR - Error al cargar XML: '_tkinter.tkapp' object has no attribute 'canvas'
+2025-04-21 22:09:55,844 - INFO - XML cargado exitosamente: C:/Users/mmarchiori/OneDrive - AXXON CONSULTING/Desktop/testxml/Exportacion WHS Querys-Warehouse location directives V3..xml
+2025-04-21 22:12:30,975 - INFO - XML cargado exitosamente: C:/Users/mmarchiori/OneDrive - AXXON CONSULTING/Desktop/testxml/Exportacion WHS Querys-Warehouse location directives V3..xml
+2025-04-21 22:17:46,749 - INFO - XML cargado exitosamente: C:/Users/mmarchiori/OneDrive - AXXON CONSULTING/Desktop/testxml/Exportacion WHS Querys-Warehouse location directives V3. 2.xml
+2025-04-21 22:17:58,762 - INFO - XML cargado exitosamente: C:/Users/mmarchiori/OneDrive - AXXON CONSULTING/Desktop/testxml/Exportacion WHS Querys-Warehouse location directive lines..xml
