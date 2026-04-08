@@ -51,3 +51,56 @@ class ModernoTema:
         # Títulos
         style.configure('Title.TLabel', font=(cls.FONT_FAMILY, cls.TITLE_SIZE, 'bold'),
                         background=cls.BG_COLOR, foreground=cls.TEXT_COLOR)
+        
+        # Treeview (para listas y tablas)
+        style.configure('Treeview', 
+                       background='white',
+                       foreground=cls.TEXT_COLOR,
+                       fieldbackground='white',
+                       font=(cls.FONT_FAMILY, cls.FONT_SIZE))
+        style.configure('Treeview.Heading',
+                       background=cls.BG_COLOR,
+                       foreground=cls.TEXT_COLOR,
+                       font=(cls.FONT_FAMILY, cls.FONT_SIZE, 'bold'))
+        style.map('Treeview',
+                 background=[('selected', cls.ACCENT_COLOR)],
+                 foreground=[('selected', 'white')])
+        
+        # Progressbar
+        style.configure('TProgressbar',
+                       background=cls.ACCENT_COLOR,
+                       troughcolor=cls.BG_COLOR,
+                       borderwidth=0,
+                       thickness=10)
+        
+        # Notebook (pestañas)
+        style.configure('TNotebook',
+                       background=cls.BG_COLOR,
+                       borderwidth=0)
+        style.configure('TNotebook.Tab',
+                       background=cls.BG_COLOR,
+                       foreground=cls.TEXT_COLOR,
+                       padding=[10, 5],
+                       font=(cls.FONT_FAMILY, cls.FONT_SIZE))
+        style.map('TNotebook.Tab',
+                 background=[('selected', cls.ACCENT_COLOR)],
+                 foreground=[('selected', 'white')])
+        
+        # LabelFrame
+        style.configure('TLabelframe',
+                       background=cls.BG_COLOR,
+                       foreground=cls.TEXT_COLOR)
+        style.configure('TLabelframe.Label',
+                       background=cls.BG_COLOR,
+                       foreground=cls.TEXT_COLOR,
+                       font=(cls.FONT_FAMILY, cls.FONT_SIZE, 'bold'))
+        
+        # Scrollbar
+        style.configure('TScrollbar',
+                       background=cls.BG_COLOR,
+                       troughcolor=cls.BG_COLOR,
+                       borderwidth=0,
+                       arrowcolor=cls.TEXT_COLOR)
+        style.map('TScrollbar',
+                 background=[('active', cls.ACCENT_COLOR)],
+                 arrowcolor=[('active', 'white')])

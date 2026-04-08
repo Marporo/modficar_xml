@@ -1,14 +1,33 @@
 # main_app.py - Archivo principal que integra todo
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, scrolledtext, simpledialog
 import os
 import sys
 import ctypes
+import re
+import json
+from datetime import datetime
+from threading import Thread
+import logging
+from lxml import etree as ET
+from copy import deepcopy
+import pandas as pd
+from typing import Dict, List, Set, Optional, Tuple
 
 # Importar nuestros propios módulos
-from xml_modifier import modificar_xml
+from xml_modifier import modificar_xml, validar_xml, obtener_etiquetas_unicas, obtener_valores_etiqueta
 from ui_theme import ModernoTema
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('app.log'),
+        logging.StreamHandler()
+    ]
+)
 
 # Hacer que la aplicación sea consciente de la alta resolución (DPI-aware) en Windows
 if sys.platform.startswith('win'):
@@ -17,28 +36,59 @@ if sys.platform.startswith('win'):
     except:
         pass
 
+def resource_path(relative_path):
+    """Obtiene la ruta absoluta al recurso, funciona para dev y para PyInstaller"""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 class AplicacionXML(tk.Tk):
     def __init__(self):
         super().__init__()
         
+        # Configuración de la ventana principal
         self.title("Modificador de XML")
-        self.geometry("650x550")
-        self.configure(bg=ModernoTema.BG_COLOR)
-        self.resizable(True, True)
+        self.geometry("800x600")
         
-        # Configurar el estilo moderno
-        ModernoTema.configurar_estilo()
+        # Establecer el ícono de la ventana
+        self.iconbitmap(resource_path('propelimg.ico'))
         
-        # Variables
+        # Variables de la aplicación
         self.archivo_seleccionado = tk.StringVar()
+        self.directorio_seleccionado = tk.StringVar()
+        self.modo_multiple = tk.BooleanVar(value=False)
         self.etiqueta = tk.StringVar()
         self.valor_actual = tk.StringVar()
         self.valor_nuevo = tk.StringVar()
+        self.usar_regex = tk.BooleanVar(value=False)
+        self.progress_var = tk.DoubleVar()
+        self.etiquetas_disponibles = []  # Lista para almacenar las etiquetas disponibles
         
-        # Crear widgets
-        self.crear_widgets()
+        # Inicialización de listas y diccionarios
+        self.historial_cambios = []
         
-        # Centrar ventana
+        # Crear notebook para pestañas
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Crear pestañas
+        self.pestaña_principal = ttk.Frame(self.notebook)
+        self.pestaña_historial = ttk.Frame(self.notebook)
+        self.pestaña_ayuda = ttk.Frame(self.notebook)
+        
+        # Agregar pestañas al notebook
+        self.notebook.add(self.pestaña_principal, text="Modificar XML")
+        self.notebook.add(self.pestaña_historial, text="Historial")
+        self.notebook.add(self.pestaña_ayuda, text="Ayuda")
+        
+        # Configurar cada pestaña
+        self.configurar_pestaña_principal()
+        self.configurar_pestaña_historial()
+        self.configurar_pestaña_ayuda()
+        
+        # Centrar la ventana
         self.center_window()
         
     def center_window(self):
@@ -49,150 +99,834 @@ class AplicacionXML(tk.Tk):
         y = (self.winfo_screenheight() // 2) - (height // 2)
         self.geometry('{}x{}+{}+{}'.format(width, height, x, y))
         
-    def crear_widgets(self):
+    def configurar_pestaña_principal(self):
         # Frame principal con padding
-        main_frame = ttk.Frame(self, style='TFrame')
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=30)
+        main_frame = ttk.Frame(self.pestaña_principal, style='TFrame')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
         # Título
-        titulo = ttk.Label(main_frame, text="Modificador de XML", style='Title.TLabel')
+        titulo = ttk.Label(main_frame, text="Modificador Avanzado de XML", 
+                          style='Title.TLabel',
+                          font=(ModernoTema.FONT_FAMILY, ModernoTema.TITLE_SIZE + 4, 'bold'),
+                          foreground='#0066cc')  # Azul
         titulo.pack(pady=(0, 25))
         
-        # Contenedor para los campos
-        campos_frame = ttk.Frame(main_frame)
-        campos_frame.pack(fill=tk.X, pady=10)
+        # Frame para selección de modo y archivo/directorio
+        seleccion_frame = ttk.Frame(main_frame)
+        seleccion_frame.pack(fill=tk.X, pady=5)
         
-        # Selección de archivo
-        archivo_frame = ttk.Frame(campos_frame)
-        archivo_frame.pack(fill=tk.X, pady=10)
+        # Modo de operación
+        modo_frame = ttk.Frame(seleccion_frame)
+        modo_frame.pack(fill=tk.X, pady=5)
         
-        archivo_label = ttk.Label(archivo_frame, text="Archivo XML:")
-        archivo_label.pack(anchor=tk.W, pady=(0, 5))
+        ttk.Radiobutton(modo_frame, text="Archivo único", variable=self.modo_multiple, 
+                       value=False, command=self.cambiar_modo).pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(modo_frame, text="Múltiples archivos", variable=self.modo_multiple, 
+                       value=True, command=self.cambiar_modo).pack(side=tk.LEFT, padx=5)
         
-        archivo_busqueda_frame = ttk.Frame(archivo_frame)
-        archivo_busqueda_frame.pack(fill=tk.X)
+        # Frame contenedor para archivo/directorio
+        self.selector_frame = ttk.Frame(seleccion_frame)
+        self.selector_frame.pack(fill=tk.X, pady=5)
         
-        archivo_entry = ttk.Entry(archivo_busqueda_frame, textvariable=self.archivo_seleccionado, width=50)
-        archivo_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=5)
+        # Frame para selección de archivo
+        self.archivo_frame = ttk.Frame(self.selector_frame)
+        ttk.Label(self.archivo_frame, text="Archivo XML:").pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Entry(self.archivo_frame, textvariable=self.archivo_seleccionado, width=50).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(self.archivo_frame, text="Buscar", command=self.buscar_archivo, 
+                  style='Secondary.TButton').pack(side=tk.LEFT, padx=(10, 0))
         
-        buscar_btn = ttk.Button(archivo_busqueda_frame, text="Buscar", command=self.buscar_archivo, style='Secondary.TButton', width=10)
-        buscar_btn.pack(side=tk.RIGHT, padx=(10, 0), ipady=5)
+        # Frame para selección de directorio
+        self.directorio_frame = ttk.Frame(self.selector_frame)
+        ttk.Label(self.directorio_frame, text="Directorio:").pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Entry(self.directorio_frame, textvariable=self.directorio_seleccionado, width=50).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(self.directorio_frame, text="Buscar", command=self.buscar_directorio, 
+                  style='Secondary.TButton').pack(side=tk.LEFT, padx=(10, 0))
         
-        # Etiqueta a buscar
-        etiqueta_frame = ttk.Frame(campos_frame)
-        etiqueta_frame.pack(fill=tk.X, pady=10)
+        # Frame para etiqueta y valores
+        valores_frame = ttk.LabelFrame(main_frame, text="Modificación")
+        valores_frame.pack(fill=tk.X, pady=10)
         
-        etiqueta_label = ttk.Label(etiqueta_frame, text="Etiqueta a buscar:")
-        etiqueta_label.pack(anchor=tk.W, pady=(0, 5))
+        # Etiqueta
+        ttk.Label(valores_frame, text="Etiqueta:").pack(anchor=tk.W, padx=5, pady=2)
+        self.etiqueta_combobox = ttk.Combobox(valores_frame, textvariable=self.etiqueta)
+        self.etiqueta_combobox.pack(fill=tk.X, padx=5, pady=2)
+        self.etiqueta_combobox.bind('<<ComboboxSelected>>', self.actualizar_valores_disponibles)
         
-        etiqueta_entry = ttk.Entry(etiqueta_frame, textvariable=self.etiqueta)
-        etiqueta_entry.pack(fill=tk.X, ipady=5)
+        # Valor actual y opciones de regex
+        valor_actual_frame = ttk.Frame(valores_frame)
+        valor_actual_frame.pack(fill=tk.X, padx=5, pady=2)
         
-        # Valor actual
-        valor_actual_frame = ttk.Frame(campos_frame)
-        valor_actual_frame.pack(fill=tk.X, pady=10)
+        ttk.Label(valor_actual_frame, text="Valor actual:").pack(anchor=tk.W)
         
-        valor_actual_label = ttk.Label(valor_actual_frame, text="Valor actual:")
-        valor_actual_label.pack(anchor=tk.W, pady=(0, 5))
+        valor_entrada_frame = ttk.Frame(valor_actual_frame)
+        valor_entrada_frame.pack(fill=tk.X, pady=2)
         
-        valor_actual_entry = ttk.Entry(valor_actual_frame, textvariable=self.valor_actual)
-        valor_actual_entry.pack(fill=tk.X, ipady=5)
+        self.valor_actual_combobox = ttk.Combobox(valor_entrada_frame, textvariable=self.valor_actual)
+        self.valor_actual_combobox.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        regex_frame = ttk.Frame(valor_actual_frame)
+        regex_frame.pack(fill=tk.X, pady=(2, 0))
+        
+        ttk.Checkbutton(regex_frame, text="Usar expresiones regulares", 
+                       variable=self.usar_regex).pack(side=tk.LEFT)
+        ttk.Button(regex_frame, text="?", width=3, 
+                  command=self.mostrar_ayuda_regex,
+                  style='Secondary.TButton').pack(side=tk.LEFT, padx=(5, 0))
         
         # Valor nuevo
-        valor_nuevo_frame = ttk.Frame(campos_frame)
-        valor_nuevo_frame.pack(fill=tk.X, pady=10)
+        ttk.Label(valores_frame, text="Valor nuevo:").pack(anchor=tk.W, padx=5, pady=2)
+        ttk.Entry(valores_frame, textvariable=self.valor_nuevo).pack(fill=tk.X, padx=5, pady=2)
         
-        valor_nuevo_label = ttk.Label(valor_nuevo_frame, text="Valor nuevo:")
-        valor_nuevo_label.pack(anchor=tk.W, pady=(0, 5))
+        # Botones de acción
+        botones_frame = ttk.Frame(main_frame)
+        botones_frame.pack(fill=tk.X, pady=10)
         
-        valor_nuevo_entry = ttk.Entry(valor_nuevo_frame, textvariable=self.valor_nuevo)
-        valor_nuevo_entry.pack(fill=tk.X, ipady=5)
+        ttk.Button(botones_frame, text="Vista Previa", command=self.vista_previa, 
+                  style='Secondary.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(botones_frame, text="Ejecutar", command=self.ejecutar_modificacion, 
+                  style='Accent.TButton').pack(side=tk.LEFT, padx=5)
         
-        # Botón de ejecución
-        boton_frame = ttk.Frame(main_frame)
-        boton_frame.pack(fill=tk.X, pady=20)
+        # Barra de progreso
+        self.progress_bar = ttk.Progressbar(main_frame, variable=self.progress_var, maximum=100)
+        self.progress_bar.pack(fill=tk.X, pady=5)
         
-        ejecutar_btn = ttk.Button(
-            boton_frame, 
-            text="Modificar XML", 
-            command=self.ejecutar_modificacion, 
-            style='Accent.TButton',
-            width=20
-        )
-        ejecutar_btn.pack(pady=5, ipady=8)
+        # Área de resultados
+        resultados_frame = ttk.LabelFrame(main_frame, text="Resultados")
+        resultados_frame.pack(fill=tk.BOTH, expand=True, pady=10)
         
-        # Área de estado/log con borde
-        log_frame = ttk.Frame(main_frame, relief="solid", borderwidth=1)
-        log_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        self.log_text = scrolledtext.ScrolledText(resultados_frame, height=10)
+        self.log_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # Título del log
-        log_title = ttk.Label(log_frame, text="Resultados", background="white")
-        log_title.pack(anchor=tk.W, padx=10, pady=5)
+        # Status bar
+        self.status_label = ttk.Label(main_frame, text="Listo")
+        self.status_label.pack(side=tk.LEFT, pady=5)
         
-        # Separador
-        separator = ttk.Separator(log_frame, orient='horizontal')
-        separator.pack(fill=tk.X)
+        # Inicializar modo
+        self.cambiar_modo()
+    
+    def configurar_pestaña_historial(self):
+        # Frame principal
+        main_frame = ttk.Frame(self.pestaña_historial)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
-        # Área de texto
-        self.log_text = tk.Text(log_frame, height=5, borderwidth=0, bg="white", 
-                              font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE))
-        self.log_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        self.log_text.insert(tk.END, "Listo para procesar archivos XML.")
-        self.log_text.config(state=tk.DISABLED)
+        # Lista de historial
+        self.historial_tree = ttk.Treeview(main_frame, columns=("fecha", "archivo", "etiqueta", "cambios"), show="headings")
+        self.historial_tree.heading("fecha", text="Fecha")
+        self.historial_tree.heading("archivo", text="Archivo")
+        self.historial_tree.heading("etiqueta", text="Etiqueta")
+        self.historial_tree.heading("cambios", text="Cambios (Valor Anterior → Valor Nuevo)")
         
-        # Footer
-        footer_frame = ttk.Frame(main_frame)
-        footer_frame.pack(fill=tk.X, pady=(20, 0))
+        # Configurar el ancho de las columnas
+        self.historial_tree.column("fecha", width=150)
+        self.historial_tree.column("archivo", width=200)
+        self.historial_tree.column("etiqueta", width=150)
+        self.historial_tree.column("cambios", width=400)
         
-        version_label = ttk.Label(footer_frame, text="v1.0", foreground="#999999")
-        version_label.pack(side=tk.RIGHT)
+        self.historial_tree.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Botones
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Button(btn_frame, text="Exportar", command=self.exportar_historial, 
+                  style='Secondary.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Limpiar", command=self.limpiar_historial, 
+                  style='Secondary.TButton').pack(side=tk.LEFT, padx=5)
+    
+    def configurar_pestaña_ayuda(self):
+        """Configura la pestaña de ayuda con la guía de uso"""
+        # Frame principal con padding y estilo moderno
+        main_frame = ttk.Frame(self.pestaña_ayuda, style='TFrame')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=25, pady=20)
+        
+        # Título
+        ttk.Label(main_frame, 
+                 text="Guía de Uso - Modificador de XML",
+                 style='Title.TLabel',
+                 font=(ModernoTema.FONT_FAMILY, ModernoTema.TITLE_SIZE + 2, 'bold')).pack(pady=(0, 20))
+        
+        # Crear Text widget con scroll y estilo moderno
+        texto_frame = ttk.Frame(main_frame)
+        texto_frame.pack(fill=tk.BOTH, expand=True)
+        
+        scroll = ttk.Scrollbar(texto_frame)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        texto = tk.Text(texto_frame, 
+                       wrap=tk.WORD,
+                       font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE + 1),
+                       bg=ModernoTema.BG_COLOR,
+                       fg=ModernoTema.TEXT_COLOR,
+                       relief="flat",
+                       padx=15,
+                       pady=10,
+                       spacing1=8,
+                       spacing2=2,
+                       spacing3=8,
+                       yscrollcommand=scroll.set)
+        texto.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.config(command=texto.yview)
+        
+        # Configurar tags para el formato del texto
+        texto.tag_configure('titulo', 
+                          font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE + 2, 'bold'),
+                          foreground=ModernoTema.ACCENT_COLOR,
+                          spacing1=15,
+                          spacing3=10)
+        
+        texto.tag_configure('subtitulo',
+                          font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE + 1, 'bold'),
+                          spacing1=10,
+                          spacing3=5)
+        
+        # Insertar contenido con formato
+        texto.insert('end', "¿Qué hace esta aplicación?\n", 'titulo')
+        texto.insert('end', "Esta aplicación te permite modificar archivos XML de manera eficiente, ya sea un archivo individual o múltiples archivos en un directorio. Puedes buscar y reemplazar valores específicos en etiquetas XML.\n\n")
+        
+        texto.insert('end', "Pasos para usar la aplicación:\n", 'titulo')
+        
+        texto.insert('end', "1. Selección de archivos\n", 'subtitulo')
+        texto.insert('end', "• Elige entre modificar un archivo único o múltiples archivos\n")
+        texto.insert('end', "• Para un archivo único: Haz clic en 'Buscar' y selecciona el archivo XML\n")
+        texto.insert('end', "• Para múltiples archivos: Haz clic en 'Buscar' y selecciona el directorio que contiene los archivos XML\n\n")
+        
+        texto.insert('end', "2. Selección de etiqueta y valores\n", 'subtitulo')
+        texto.insert('end', "• Selecciona la etiqueta XML que deseas modificar del menú desplegable\n")
+        texto.insert('end', "• Elige el valor actual que deseas reemplazar\n")
+        texto.insert('end', "• Ingresa el nuevo valor que deseas establecer\n\n")
+        
+        texto.insert('end', "3. Opciones avanzadas\n", 'subtitulo')
+        texto.insert('end', "• Usa el botón '?' junto a 'Usar expresiones regulares' para ver ejemplos de búsquedas avanzadas\n")
+        texto.insert('end', "• Las expresiones regulares te permiten realizar búsquedas más flexibles y potentes\n\n")
+        
+        texto.insert('end', "4. Ejecución de cambios\n", 'subtitulo')
+        texto.insert('end', "• Usa 'Vista Previa' para ver qué cambios se realizarán sin aplicarlos\n")
+        texto.insert('end', "• Si estás satisfecho con la vista previa, haz clic en 'Ejecutar' para aplicar los cambios\n")
+        texto.insert('end', "• La barra de progreso te mostrará el avance de la modificación\n\n")
+        
+        texto.insert('end', "5. Historial de cambios\n", 'subtitulo')
+        texto.insert('end', "• Todos los cambios realizados se registran en la pestaña 'Historial'\n")
+        texto.insert('end', "• Puedes exportar el historial a un archivo JSON\n")
+        texto.insert('end', "• El historial muestra la fecha, archivo, etiqueta y los valores modificados\n\n")
+        
+        texto.insert('end', "Consejos importantes:\n", 'titulo')
+        texto.insert('end', "• Siempre haz una copia de seguridad de tus archivos antes de realizar modificaciones\n")
+        texto.insert('end', "• Usa la vista previa antes de ejecutar cambios para evitar modificaciones no deseadas\n")
+        texto.insert('end', "• Si trabajas con múltiples archivos, asegúrate de que todos tengan una estructura similar\n\n")
+        
+        # Mensaje informativo simple al final, con el mismo estilo que 'Consejos importantes'
+        texto.insert('end', "\nDesarrollado con <3 por Mario Marchiori para Axxon Consulting\n", 'titulo')
+        
+        # Hacer el texto de solo lectura
+        texto.config(state='disabled')
+    
+    def cambiar_modo(self):
+        # Ocultar ambos frames primero
+        for widget in self.selector_frame.winfo_children():
+            widget.pack_forget()
+            
+        # Mostrar el frame correspondiente
+        if self.modo_multiple.get():
+            self.directorio_frame.pack(fill=tk.X)
+        else:
+            self.archivo_frame.pack(fill=tk.X)
+        
+        self.actualizar_etiquetas_disponibles()
+    
+    def actualizar_etiquetas_disponibles(self):
+        """Actualiza la lista de etiquetas disponibles basado en los archivos seleccionados"""
+        try:
+            self.etiquetas_disponibles = set()
+            
+            if self.modo_multiple.get():
+                directorio = self.directorio_seleccionado.get()
+                if os.path.exists(directorio):
+                    for archivo in os.listdir(directorio):
+                        if archivo.endswith('.xml'):
+                            ruta_completa = os.path.join(directorio, archivo)
+                            etiquetas = obtener_etiquetas_unicas(ruta_completa)
+                            self.etiquetas_disponibles.update(etiquetas)
+            else:
+                archivo = self.archivo_seleccionado.get()
+                if os.path.exists(archivo) and archivo.endswith('.xml'):
+                    self.etiquetas_disponibles = obtener_etiquetas_unicas(archivo)
+            
+            # Actualizar el combobox
+            self.etiqueta_combobox['values'] = sorted(list(self.etiquetas_disponibles))
+            if self.etiquetas_disponibles:
+                self.etiqueta_combobox.set('')  # Limpiar selección actual
+                self.valor_actual_combobox.set('')  # Limpiar también el valor actual
+                self.valor_actual_combobox['values'] = []  # Limpiar lista de valores
+                
+        except Exception as e:
+            self.actualizar_log(f"Error al actualizar etiquetas: {str(e)}")
+            messagebox.showerror("Error", f"Error al actualizar etiquetas: {str(e)}")
     
     def buscar_archivo(self):
         archivo = filedialog.askopenfilename(filetypes=[("Archivos XML", "*.xml"), ("Todos los archivos", "*.*")])
         if archivo:
             self.archivo_seleccionado.set(archivo)
             self.actualizar_log(f"Archivo seleccionado: {os.path.basename(archivo)}")
+            self.actualizar_etiquetas_disponibles()
     
     def actualizar_log(self, mensaje):
+        """Actualiza el contenido del área de log"""
         self.log_text.config(state=tk.NORMAL)
         self.log_text.delete(1.0, tk.END)
         self.log_text.insert(tk.END, mensaje)
         self.log_text.config(state=tk.DISABLED)
+        self.log_text.see(tk.END)  # Asegura que el último contenido sea visible
+    
+    def buscar_directorio(self):
+        directorio = filedialog.askdirectory()
+        if directorio:
+            self.directorio_seleccionado.set(directorio)
+            self.actualizar_log(f"Directorio seleccionado: {directorio}")
+            self.actualizar_etiquetas_disponibles()
+    
+    def vista_previa(self):
+        try:
+            # Validar campos
+            self.validar_campos()
+            
+            # Obtener archivos a procesar
+            archivos = self.obtener_archivos_xml()
+            
+            # Construir el mensaje completo
+            mensaje_completo = []
+            mensaje_completo.append("📋 Vista Previa de Cambios")
+            mensaje_completo.append("=" * 50)
+            
+            total_cambios = 0
+            for archivo in archivos:
+                cambios = modificar_xml(archivo, self.etiqueta.get(), 
+                                     self.valor_actual.get(), self.valor_nuevo.get(),
+                                     preview=True, usar_regex=self.usar_regex.get())
+                total_cambios += cambios
+                
+                mensaje_completo.append(f"\n📄 Archivo: {os.path.basename(archivo)}")
+                mensaje_completo.append(f"   • Etiqueta: {self.etiqueta.get()}")
+                mensaje_completo.append(f"   • Cambios encontrados: {cambios}")
+            
+            mensaje_completo.append("\n" + "=" * 50)
+            mensaje_completo.append("\n📊 Resumen de la operación:")
+            mensaje_completo.append(f"   • Total de archivos a procesar: {len(archivos)}")
+            mensaje_completo.append(f"   • Total de cambios a realizar: {total_cambios}")
+            mensaje_completo.append(f"\n🔄 Se reemplazarán todas las ocurrencias de:")
+            mensaje_completo.append(f"   • Valor actual: '{self.valor_actual.get()}'")
+            mensaje_completo.append(f"   • Por el valor: '{self.valor_nuevo.get()}'")
+            mensaje_completo.append(f"   • En la etiqueta: '{self.etiqueta.get()}'")
+            
+            if self.usar_regex.get():
+                mensaje_completo.append("\n⚠️ Nota: Se están utilizando expresiones regulares para la búsqueda")
+            
+            mensaje_completo.append("\n\n💡 Para aplicar estos cambios, haz clic en 'Ejecutar'")
+            
+            # Actualizar el log con el mensaje completo
+            self.actualizar_log("\n".join(mensaje_completo))
+            
+        except Exception as e:
+            self.actualizar_log(f"❌ Error en vista previa: {str(e)}")
+            messagebox.showerror("Error", str(e))
     
     def ejecutar_modificacion(self):
-        archivo = self.archivo_seleccionado.get()
-        etiqueta = self.etiqueta.get()
-        valor_actual = self.valor_actual.get()
-        valor_nuevo = self.valor_nuevo.get()
-        
-        # Validar campos
-        if not archivo:
-            messagebox.showerror("Error", "Debe seleccionar un archivo XML.")
-            return
-        if not etiqueta:
-            messagebox.showerror("Error", "Debe ingresar una etiqueta a buscar.")
-            return
-        if not valor_actual:
-            messagebox.showerror("Error", "Debe ingresar el valor actual a reemplazar.")
-            return
-        if not valor_nuevo:
-            messagebox.showerror("Error", "Debe ingresar el nuevo valor.")
-            return
-            
         try:
-            cambios = modificar_xml(archivo, etiqueta, valor_actual, valor_nuevo)
-            if cambios > 0:
-                mensaje = f"✅ Se realizaron {cambios} cambios en el archivo."
-                self.actualizar_log(mensaje)
-                messagebox.showinfo("Éxito", f"Se realizaron {cambios} cambios en el archivo.")
-            else:
-                mensaje = f"ℹ️ No se encontraron instancias de '{valor_actual}' en la etiqueta '{etiqueta}'."
-                self.actualizar_log(mensaje)
-                messagebox.showinfo("Información", f"No se encontraron instancias de '{valor_actual}' en la etiqueta '{etiqueta}'.")
+            # Validar campos
+            self.validar_campos()
+            
+            # Obtener archivos a procesar
+            archivos = self.obtener_archivos_xml()
+            
+            # Iniciar barra de progreso
+            self.progress_var.set(0)
+            total_archivos = len(archivos)
+            
+            # Procesar archivos
+            for i, archivo in enumerate(archivos):
+                # Actualizar progreso
+                self.progress_var.set((i / total_archivos) * 100)
+                self.update()
+                
+                # Procesar archivo
+                cambios = modificar_xml(archivo, self.etiqueta.get(), 
+                                     self.valor_actual.get(), self.valor_nuevo.get(),
+                                     usar_regex=self.usar_regex.get())
+                
+                # Registrar en historial
+                self.registrar_historial(archivo, cambios)
+                
+                # Actualizar log
+                self.actualizar_log(f"\nArchivo: {os.path.basename(archivo)}")
+                self.actualizar_log(f"Cambios realizados: {cambios}")
+            
+            # Completar progreso
+            self.progress_var.set(100)
+            
+            # Mostrar mensaje de éxito
+            messagebox.showinfo("Éxito", "Modificación completada")
+            
         except Exception as e:
-            mensaje = f"❌ Error: {str(e)}"
-            self.actualizar_log(mensaje)
-            messagebox.showerror("Error", f"Ha ocurrido un error: {str(e)}")
+            self.actualizar_log(f"Error: {str(e)}")
+            messagebox.showerror("Error", str(e))
+    
+    def validar_campos(self):
+        if self.modo_multiple.get():
+            if not self.directorio_seleccionado.get():
+                raise ValueError("Debe seleccionar un directorio")
+        else:
+            if not self.archivo_seleccionado.get():
+                raise ValueError("Debe seleccionar un archivo XML")
+        
+        if not self.etiqueta.get():
+            raise ValueError("Debe especificar una etiqueta")
+        if not self.valor_actual.get():
+            raise ValueError("Debe especificar el valor actual")
+        if not self.valor_nuevo.get():
+            raise ValueError("Debe especificar el nuevo valor")
+    
+    def obtener_archivos_xml(self):
+        try:
+            if self.modo_multiple.get():
+                directorio = self.directorio_seleccionado.get()
+                if not os.path.exists(directorio):
+                    raise ValueError(f"El directorio {directorio} no existe")
+                
+                archivos_xml = [os.path.join(directorio, f) for f in os.listdir(directorio) 
+                              if f.endswith('.xml')]
+                
+                if not archivos_xml:
+                    raise ValueError(f"No se encontraron archivos XML en el directorio {directorio}")
+                
+                return archivos_xml
+            else:
+                archivo = self.archivo_seleccionado.get()
+                if not os.path.exists(archivo):
+                    raise ValueError(f"El archivo {archivo} no existe")
+                if not archivo.endswith('.xml'):
+                    raise ValueError(f"El archivo {archivo} no es un archivo XML")
+                return [archivo]
+                
+        except Exception as e:
+            self.actualizar_log(f"Error al obtener archivos XML: {str(e)}")
+            raise
+    
+    def registrar_historial(self, archivo, cambios):
+        self.historial_cambios.append({
+            'fecha': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'archivo': os.path.basename(archivo),
+            'etiqueta': self.etiqueta.get(),
+            'valor_anterior': self.valor_actual.get(),
+            'valor_nuevo': self.valor_nuevo.get(),
+            'cambios': cambios
+        })
+        
+        # Actualizar árbol de historial
+        self.historial_tree.insert('', 0, values=(
+            self.historial_cambios[-1]['fecha'],
+            self.historial_cambios[-1]['archivo'],
+            self.historial_cambios[-1]['etiqueta'],
+            f"{self.historial_cambios[-1]['valor_anterior']} → {self.historial_cambios[-1]['valor_nuevo']} ({cambios} cambios)"
+        ))
+    
+    def exportar_historial(self):
+        archivo = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json")]
+        )
+        if archivo:
+            with open(archivo, 'w') as f:
+                json.dump(self.historial_cambios, f, indent=4)
+            messagebox.showinfo("Éxito", "Historial exportado correctamente")
+    
+    def limpiar_historial(self):
+        if messagebox.askyesno("Confirmar", "¿Desea limpiar todo el historial?"):
+            self.historial_cambios = []
+            for item in self.historial_tree.get_children():
+                self.historial_tree.delete(item)
+
+    def mostrar_ayuda_regex(self):
+        """Muestra una ventana de ayuda con información sobre expresiones regulares"""
+        ventana_ayuda = tk.Toplevel(self)
+        ventana_ayuda.title("Ayuda - Expresiones Regulares")
+        ventana_ayuda.geometry("650x600")
+        ventana_ayuda.minsize(500, 400)  # Tamaño mínimo
+        
+        # Hacer que la ventana sea modal pero permitir maximizar
+        ventana_ayuda.transient(self)
+        ventana_ayuda.grab_set()
+        
+        # Permitir que la ventana sea redimensionable y maximizable
+        ventana_ayuda.resizable(True, True)
+        
+        # Configurar el comportamiento de maximización
+        def toggle_maximize(event=None):
+            if ventana_ayuda.state() == 'zoomed':
+                ventana_ayuda.state('normal')
+            else:
+                ventana_ayuda.state('zoomed')
+        
+        # Agregar atajo de teclado para maximizar/restaurar (F11)
+        ventana_ayuda.bind('<F11>', toggle_maximize)
+        
+        # Frame principal con padding y estilo moderno
+        main_frame = ttk.Frame(ventana_ayuda, style='TFrame')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=25, pady=20)
+        
+        # Configurar el grid para que el contenido se expanda correctamente
+        main_frame.grid_columnconfigure(0, weight=1)
+        main_frame.grid_rowconfigure(2, weight=1)  # La fila del texto expandible
+        
+        # Título con estilo moderno y botón de maximizar
+        titulo_frame = ttk.Frame(main_frame)
+        titulo_frame.grid(row=0, column=0, sticky='ew', pady=(0, 20))
+        
+        ttk.Label(titulo_frame, 
+                 text="Guía de Expresiones Regulares",
+                 style='Title.TLabel',
+                 font=(ModernoTema.FONT_FAMILY, ModernoTema.TITLE_SIZE + 2, 'bold')).pack(side=tk.LEFT)
+        
+        # Botón de maximizar
+        ttk.Button(titulo_frame,
+                  text="⛶",
+                  command=toggle_maximize,
+                  style='Secondary.TButton',
+                  width=3).pack(side=tk.RIGHT)
+        
+        # Crear Text widget con scroll y estilo moderno
+        texto_frame = ttk.Frame(main_frame)
+        texto_frame.grid(row=2, column=0, sticky='nsew')
+        
+        # Configurar el grid del frame de texto
+        texto_frame.grid_columnconfigure(0, weight=1)
+        texto_frame.grid_rowconfigure(0, weight=1)
+        
+        # Estilo personalizado para el scrollbar
+        scroll = ttk.Scrollbar(texto_frame)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Texto con estilo moderno
+        texto = tk.Text(texto_frame, 
+                       wrap=tk.WORD,
+                       font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE + 1),
+                       bg=ModernoTema.BG_COLOR,
+                       fg=ModernoTema.TEXT_COLOR,
+                       relief="flat",
+                       padx=15,
+                       pady=10,
+                       spacing1=8,  # Espacio antes de cada línea
+                       spacing2=2,  # Espacio entre líneas
+                       spacing3=8,  # Espacio después de cada línea
+                       yscrollcommand=scroll.set)
+        texto.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.config(command=texto.yview)
+        
+        # Configurar tags para el formato del texto
+        texto.tag_configure('titulo', 
+                          font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE + 2, 'bold'),
+                          foreground=ModernoTema.ACCENT_COLOR,
+                          spacing1=15,
+                          spacing3=10)
+        
+        texto.tag_configure('subtitulo',
+                          font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE + 1, 'bold'),
+                          spacing1=10,
+                          spacing3=5)
+        
+        texto.tag_configure('codigo',
+                          font=('Consolas', ModernoTema.FONT_SIZE),
+                          background='#f8f9fa',
+                          spacing1=5,
+                          spacing3=5)
+        
+        # Insertar contenido con formato
+        texto.insert('end', "¿Qué son las expresiones regulares?\n", 'titulo')
+        texto.insert('end', "Las expresiones regulares son patrones de búsqueda que permiten encontrar texto de forma flexible y potente. Son especialmente útiles cuando necesitas buscar variaciones de un mismo texto o patrones específicos.\n\n")
+        
+        texto.insert('end', "¿Cuándo usar expresiones regulares?\n", 'titulo')
+        texto.insert('end', "• Cuando necesitas buscar variaciones de un mismo texto\n")
+        texto.insert('end', "• Cuando quieres encontrar patrones (como números, fechas, códigos)\n")
+        texto.insert('end', "• Cuando necesitas hacer búsquedas que ignoren mayúsculas/minúsculas\n\n")
+        
+        texto.insert('end', "Ejemplos comunes\n", 'titulo')
+        
+        texto.insert('end', "1. Buscar con o sin mayúsculas:\n", 'subtitulo')
+        texto.insert('end', "[Pp]recio → Encuentra \"precio\" y \"Precio\"\n", 'codigo')
+        
+        texto.insert('end', "\n2. Buscar números:\n", 'subtitulo')
+        texto.insert('end', "precio\\d+ → Encuentra \"precio1\", \"precio2\", \"precio123\"\n", 'codigo')
+        
+        texto.insert('end', "\n3. Buscar texto que empiece o termine con algo:\n", 'subtitulo')
+        texto.insert('end', "^precio → Encuentra texto que empiece con \"precio\"\n", 'codigo')
+        texto.insert('end', "precio$ → Encuentra texto que termine con \"precio\"\n", 'codigo')
+        
+        texto.insert('end', "\n4. Buscar cualquier carácter:\n", 'subtitulo')
+        texto.insert('end', "precio.* → Encuentra \"precio final\", \"precio base\", etc.\n", 'codigo')
+        
+        texto.insert('end', "\n5. Buscar opciones específicas:\n", 'subtitulo')
+        texto.insert('end', "precio(base|final) → Encuentra \"preciobase\" o \"preciofinal\"\n", 'codigo')
+        
+        texto.insert('end', "\nConsejos útiles\n", 'titulo')
+        texto.insert('end', "• El punto (.) representa cualquier carácter\n")
+        texto.insert('end', "• El asterisco (*) significa \"0 o más veces\"\n")
+        texto.insert('end', "• El más (+) significa \"1 o más veces\"\n")
+        texto.insert('end', "• Los corchetes [] definen un conjunto de caracteres\n")
+        texto.insert('end', "• El circunflejo (^) al inicio busca al comienzo del texto\n")
+        texto.insert('end', "• El dólar ($) al final busca al final del texto\n\n")
+        
+        texto.insert('end', "Recomendación\n", 'titulo')
+        texto.insert('end', "Siempre usa primero el botón de \"Vista Previa\" para verificar qué cambios se realizarán antes de ejecutar la modificación.")
+        
+        # Hacer el texto de solo lectura
+        texto.config(state='disabled')
+        
+        # Frame para los botones
+        botones_frame = ttk.Frame(main_frame)
+        botones_frame.grid(row=3, column=0, sticky='e', pady=(20, 0))
+        
+        # Botón de maximizar
+        ttk.Button(botones_frame, 
+                  text="Maximizar",
+                  command=toggle_maximize,
+                  style='Secondary.TButton',
+                  width=15).pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Botón de cerrar con estilo moderno
+        ttk.Button(botones_frame, 
+                  text="Cerrar",
+                  command=ventana_ayuda.destroy,
+                  style='Secondary.TButton',
+                  width=15).pack(side=tk.RIGHT)
+        
+        # Centrar la ventana
+        ventana_ayuda.update_idletasks()
+        width = ventana_ayuda.winfo_width()
+        height = ventana_ayuda.winfo_height()
+        x = (ventana_ayuda.winfo_screenwidth() // 2) - (width // 2)
+        y = (ventana_ayuda.winfo_screenheight() // 2) - (height // 2)
+        ventana_ayuda.geometry(f'{width}x{height}+{x}+{y}')
+
+    def actualizar_valores_disponibles(self, event=None):
+        """Actualiza la lista de valores disponibles para la etiqueta seleccionada"""
+        try:
+            valores_disponibles = set()
+            etiqueta = self.etiqueta.get()
+            
+            if not etiqueta:
+                return
+                
+            if self.modo_multiple.get():
+                directorio = self.directorio_seleccionado.get()
+                if os.path.exists(directorio):
+                    for archivo in os.listdir(directorio):
+                        if archivo.endswith('.xml'):
+                            ruta_completa = os.path.join(directorio, archivo)
+                            valores = obtener_valores_etiqueta(ruta_completa, etiqueta)
+                            valores_disponibles.update(valores)
+            else:
+                archivo = self.archivo_seleccionado.get()
+                if os.path.exists(archivo) and archivo.endswith('.xml'):
+                    valores_disponibles = obtener_valores_etiqueta(archivo, etiqueta)
+            
+            # Actualizar el combobox
+            self.valor_actual_combobox['values'] = sorted(list(valores_disponibles))
+            if valores_disponibles:
+                self.valor_actual_combobox.set('')  # Limpiar selección actual
+                
+        except Exception as e:
+            self.actualizar_log(f"Error al actualizar valores: {str(e)}")
+            messagebox.showerror("Error", f"Error al actualizar valores: {str(e)}")
+
+    def mostrar_error(self, titulo, mensaje, detalles=None):
+        """Muestra un diálogo de error con texto copiable"""
+        ventana_error = tk.Toplevel(self)
+        ventana_error.title(titulo)
+        ventana_error.geometry("500x300")
+        ventana_error.minsize(400, 200)
+        
+        # Frame principal
+        frame_principal = ttk.Frame(ventana_error, padding="10")
+        frame_principal.pack(fill=tk.BOTH, expand=True)
+        
+        # Ícono de error y mensaje principal
+        frame_superior = ttk.Frame(frame_principal)
+        frame_superior.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(frame_superior, 
+                 text="⚠️", 
+                 font=(ModernoTema.FONT_FAMILY, 24)).pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Label(frame_superior, 
+                 text=mensaje,
+                 wraplength=400,
+                 font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE)).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Área de detalles con scroll
+        if detalles:
+            ttk.Label(frame_principal, 
+                     text="Detalles del error:",
+                     font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE, "bold")).pack(anchor=tk.W, pady=(0, 5))
+            
+            # Frame para el área de texto con borde
+            frame_texto = ttk.Frame(frame_principal, style='Card.TFrame')
+            frame_texto.pack(fill=tk.BOTH, expand=True)
+            
+            # Área de texto con scroll
+            texto_error = tk.Text(frame_texto, 
+                                wrap=tk.WORD, 
+                                height=8,
+                                font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE))
+            texto_error.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            
+            scrollbar = ttk.Scrollbar(frame_texto, orient="vertical", command=texto_error.yview)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            texto_error.configure(yscrollcommand=scrollbar.set)
+            texto_error.insert("1.0", detalles)
+            texto_error.configure(state="disabled")
+        
+        # Frame para botones
+        frame_botones = ttk.Frame(frame_principal)
+        frame_botones.pack(fill=tk.X, pady=(10, 0))
+        
+        # Botón copiar
+        def copiar_error():
+            texto_completo = f"{mensaje}\n\nDetalles:\n{detalles}" if detalles else mensaje
+            self.clipboard_clear()
+            self.clipboard_append(texto_completo)
+            
+        ttk.Button(frame_botones, 
+                  text="Copiar", 
+                  command=copiar_error,
+                  style='Secondary.TButton').pack(side=tk.LEFT)
+        
+        ttk.Button(frame_botones, 
+                  text="Cerrar", 
+                  command=ventana_error.destroy,
+                  style='Secondary.TButton').pack(side=tk.RIGHT)
+        
+        # Centrar la ventana
+        ventana_error.transient(self)
+        ventana_error.grab_set()
+        ventana_error.update_idletasks()
+        ancho = ventana_error.winfo_width()
+        alto = ventana_error.winfo_height()
+        x = (ventana_error.winfo_screenwidth() // 2) - (ancho // 2)
+        y = (ventana_error.winfo_screenheight() // 2) - (alto // 2)
+        ventana_error.geometry(f'{ancho}x{alto}+{x}+{y}')
+
+    def mostrar_ayuda_general(self):
+        """Muestra una ventana de ayuda con información general sobre cómo usar la aplicación"""
+        ventana_ayuda = tk.Toplevel(self)
+        ventana_ayuda.title("Ayuda - Guía de Uso")
+        ventana_ayuda.geometry("800x600")
+        ventana_ayuda.minsize(600, 400)
+        
+        # Hacer que la ventana sea modal
+        ventana_ayuda.transient(self)
+        ventana_ayuda.grab_set()
+        
+        # Frame principal con padding y estilo moderno
+        main_frame = ttk.Frame(ventana_ayuda, style='TFrame')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=25, pady=20)
+        
+        # Título
+        ttk.Label(main_frame, 
+                 text="Guía de Uso - Modificador de XML",
+                 style='Title.TLabel',
+                 font=(ModernoTema.FONT_FAMILY, ModernoTema.TITLE_SIZE + 2, 'bold')).pack(pady=(0, 20))
+        
+        # Crear Text widget con scroll y estilo moderno
+        texto_frame = ttk.Frame(main_frame)
+        texto_frame.pack(fill=tk.BOTH, expand=True)
+        
+        scroll = ttk.Scrollbar(texto_frame)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        texto = tk.Text(texto_frame, 
+                       wrap=tk.WORD,
+                       font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE + 1),
+                       bg=ModernoTema.BG_COLOR,
+                       fg=ModernoTema.TEXT_COLOR,
+                       relief="flat",
+                       padx=15,
+                       pady=10,
+                       spacing1=8,
+                       spacing2=2,
+                       spacing3=8,
+                       yscrollcommand=scroll.set)
+        texto.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.config(command=texto.yview)
+        
+        # Configurar tags para el formato del texto
+        texto.tag_configure('titulo', 
+                          font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE + 2, 'bold'),
+                          foreground=ModernoTema.ACCENT_COLOR,
+                          spacing1=15,
+                          spacing3=10)
+        
+        texto.tag_configure('subtitulo',
+                          font=(ModernoTema.FONT_FAMILY, ModernoTema.FONT_SIZE + 1, 'bold'),
+                          spacing1=10,
+                          spacing3=5)
+        
+        # Insertar contenido con formato
+        texto.insert('end', "¿Qué hace esta aplicación?\n", 'titulo')
+        texto.insert('end', "Esta aplicación te permite modificar archivos XML de manera eficiente, ya sea un archivo individual o múltiples archivos en un directorio. Puedes buscar y reemplazar valores específicos en etiquetas XML.\n\n")
+        
+        texto.insert('end', "Pasos para usar la aplicación:\n", 'titulo')
+        
+        texto.insert('end', "1. Selección de archivos\n", 'subtitulo')
+        texto.insert('end', "• Elige entre modificar un archivo único o múltiples archivos\n")
+        texto.insert('end', "• Para un archivo único: Haz clic en 'Buscar' y selecciona el archivo XML\n")
+        texto.insert('end', "• Para múltiples archivos: Haz clic en 'Buscar' y selecciona el directorio que contiene los archivos XML\n\n")
+        
+        texto.insert('end', "2. Selección de etiqueta y valores\n", 'subtitulo')
+        texto.insert('end', "• Selecciona la etiqueta XML que deseas modificar del menú desplegable\n")
+        texto.insert('end', "• Elige el valor actual que deseas reemplazar\n")
+        texto.insert('end', "• Ingresa el nuevo valor que deseas establecer\n\n")
+        
+        texto.insert('end', "3. Opciones avanzadas\n", 'subtitulo')
+        texto.insert('end', "• Usa el botón '?' junto a 'Usar expresiones regulares' para ver ejemplos de búsquedas avanzadas\n")
+        texto.insert('end', "• Las expresiones regulares te permiten realizar búsquedas más flexibles y potentes\n\n")
+        
+        texto.insert('end', "4. Ejecución de cambios\n", 'subtitulo')
+        texto.insert('end', "• Usa 'Vista Previa' para ver qué cambios se realizarán sin aplicarlos\n")
+        texto.insert('end', "• Si estás satisfecho con la vista previa, haz clic en 'Ejecutar' para aplicar los cambios\n")
+        texto.insert('end', "• La barra de progreso te mostrará el avance de la modificación\n\n")
+        
+        texto.insert('end', "5. Historial de cambios\n", 'subtitulo')
+        texto.insert('end', "• Todos los cambios realizados se registran en la pestaña 'Historial'\n")
+        texto.insert('end', "• Puedes exportar el historial a un archivo JSON\n")
+        texto.insert('end', "• El historial muestra la fecha, archivo, etiqueta y los valores modificados\n\n")
+        
+        texto.insert('end', "Consejos importantes:\n", 'titulo')
+        texto.insert('end', "• Siempre haz una copia de seguridad de tus archivos antes de realizar modificaciones\n")
+        texto.insert('end', "• Usa la vista previa antes de ejecutar cambios para evitar modificaciones no deseadas\n")
+        texto.insert('end', "• Si trabajas con múltiples archivos, asegúrate de que todos tengan una estructura similar\n")
+        
+        # Mensaje informativo simple al final, con el mismo estilo que 'Consejos importantes'
+        texto.insert('end', "\nDesarrollado con <3 por Mario Marchiori para Axxon Consulting\n", 'titulo')
+        
+        # Hacer el texto de solo lectura
+        texto.config(state='disabled')
+        
+        # Frame para botones
+        botones_frame = ttk.Frame(main_frame)
+        botones_frame.pack(fill=tk.X, pady=(20, 0))
+        
+        ttk.Button(botones_frame, 
+                  text="Cerrar",
+                  command=ventana_ayuda.destroy,
+                  style='Secondary.TButton',
+                  width=15).pack(side=tk.RIGHT)
+        
+        # Centrar la ventana
+        ventana_ayuda.update_idletasks()
+        width = ventana_ayuda.winfo_width()
+        height = ventana_ayuda.winfo_height()
+        x = (ventana_ayuda.winfo_screenwidth() // 2) - (width // 2)
+        y = (ventana_ayuda.winfo_screenheight() // 2) - (height // 2)
+        ventana_ayuda.geometry(f'{width}x{height}+{x}+{y}')
 
 if __name__ == "__main__":
     app = AplicacionXML()
