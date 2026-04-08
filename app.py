@@ -1,11 +1,20 @@
+"""
+app.py - Controlador Principal (Capa de Presentación Web)
+
+Este archivo actúa como el "Camarero" del proyecto.
+Su única responsabilidad es abrir un servidor web web mediante Flask,
+recibir las peticiones HTTP del usuario (formularios y archivos cargados),
+y pasarle esos datos a nuestro núcleo de procesamiento (El "Cocinero").
+No contiene lógica profunda sobre cómo modificar un XML, solo sabe cómo
+recibir solicitudes y devolver respuestas.
+"""
+
 import os
-import sys
 from flask import Flask, render_template, request, send_file, flash, redirect, url_for
 from werkzeug.utils import secure_filename
 
-# Asegurarse de que el directorio principal esté en el path para importar xml_modifier
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from xml_modifier import modificar_xml
+# Importamos la lógica de negocio desde nuestro núcleo aislado
+from core.xml_modifier import modificar_xml
 
 app = Flask(__name__)
 app.secret_key = "xml_modifier_secret_key"

@@ -1,4 +1,14 @@
-# xml_modifier.py - Contiene la lógica de negocio
+"""
+core/xml_modifier.py - Núcleo del Proyecto (Lógica de Negocio)
+
+Este archivo es el cerebro puramente algorítmico de la aplicación (El "Cocinero").
+Su función es recibir archivos, buscar patrones, modificarlos y guardarlos de forma
+estable. 
+
+IMPORTANTE: Está completamente aislado. No sabe nada sobre HTML, Flask o 
+interfaces gráficas. Esto asegura que la lógica principal sea indestructible
+y reutilizable.
+"""
 
 import xml.etree.ElementTree as ET
 import re
