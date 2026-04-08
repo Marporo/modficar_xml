@@ -1,5 +1,10 @@
 .DS_Store
 __pycache__/
 *.pyc
-web/uploads/
+*.db
+instance/
+storage/
+app.log
 test.xml
+!storage/.gitkeep
+!instance/.gitkeep

@@ -1,71 +1,186 @@
 """
-app.py - Controlador Principal (Capa de Presentación Web)
+app.py - Controlador Principal Pro (Plataforma XML)
 
-Este archivo actúa como el "Camarero" del proyecto.
-Su única responsabilidad es abrir un servidor web web mediante Flask,
-recibir las peticiones HTTP del usuario (formularios y archivos cargados),
-y pasarle esos datos a nuestro núcleo de procesamiento (El "Cocinero").
-No contiene lógica profunda sobre cómo modificar un XML, solo sabe cómo
-recibir solicitudes y devolver respuestas.
+Este archivo gestiona la autenticación, la base de datos y la orquestación
+entre la interfaz web y el núcleo de procesamiento core/xml_modifier.py.
 """
 
 import os
-from flask import Flask, render_template, request, send_file, flash, redirect, url_for
+from datetime import datetime
+from flask import Flask, render_template, request, send_file, flash, redirect, url_for, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
-# Importamos la lógica de negocio desde nuestro núcleo aislado
-from core.xml_modifier import modificar_xml
+# Importaciones locales
+from models import db, User, XMLActivity
+from core.xml_modifier import modificar_xml, obtener_etiquetas_unicas, obtener_valores_etiqueta
 
 app = Flask(__name__)
-app.secret_key = "xml_modifier_secret_key"
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
+app.secret_key = "xml_modifier_pro_ultra_secret_key"
 
-# Asegurar que la carpeta de subidas existe
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# Configuración de Base de Datos SQLite
+basedir = os.path.abspath(os.path.dirname(__file__))
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'instance', 'xml_pro.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'storage')
+
+# Inicialización de extensiones
+db.init_app(app)
+login_manager = LoginManager()
+login_manager.login_view = 'login'
+login_manager.init_app(app)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+# --- RUTAS DE AUTENTICACIÓN ---
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        user = User.query.filter_by(username=request.form.get('username')).first()
+        if user and check_password_hash(user.password_hash, request.form.get('password')):
+            login_user(user)
+            return redirect(url_for('index'))
+        flash('Usuario o contraseña incorrectos', 'error')
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        if User.query.filter_by(username=username).first():
+            flash('El nombre de usuario ya existe', 'error')
+            return redirect(url_for('register'))
+            
+        new_user = User(
+            username=username,
+            password_hash=generate_password_hash(password, method='pbkdf2:sha256')
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        flash('Registro exitoso. Procede a iniciar sesión.', 'success')
+        return redirect(url_for('login'))
+    return render_template('register.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
+# --- RUTAS PRINCIPALES ---
 
 @app.route('/')
+@login_required
 def index():
-    return render_template('index.html')
+    activities = XMLActivity.query.filter_by(user_id=current_user.id).order_by(XMLActivity.timestamp.desc()).all()
+    return render_template('index.html', activities=activities)
+
+@app.route('/api/parse', methods=['POST'])
+@login_required
+def parse_xml():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No select'}), 400
+    
+    filename = secure_filename(file.filename)
+    temp_path = os.path.join(app.config['UPLOAD_FOLDER'], 'originals', f"temp_{filename}")
+    file.save(temp_path)
+    
+    try:
+        tags = sorted(list(obtener_etiquetas_unicas(temp_path)))
+        return jsonify({'tags': tags})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+@app.route('/api/get_values', methods=['POST'])
+@login_required
+def get_values():
+    data = request.json
+    tag = data.get('tag')
+    # Nota: En una versión más pro, guardaríamos el archivo temporalmente para esto
+    # Por ahora, esta función se activará tras la subida inicial.
+    return jsonify({'values': []})
 
 @app.route('/upload', methods=['POST'])
-def upload_file():
+@login_required
+def upload_process():
     if 'file' not in request.files:
-        flash('No se subió ningún archivo')
-        return redirect(request.url)
+        flash('No file')
+        return redirect(url_for('index'))
     
     file = request.files['file']
-    etiqueta = request.form.get('etiqueta')
-    valor_actual = request.form.get('valor_actual')
-    valor_nuevo = request.form.get('valor_nuevo')
+    tag = request.form.get('etiqueta')
+    old_val = request.form.get('valor_actual')
+    new_val = request.form.get('valor_nuevo')
+    use_regex = request.form.get('usar_regex') == 'on'
     
     if file.filename == '':
-        flash('Archivo no seleccionado')
-        return redirect(request.url)
-        
-    if not all([etiqueta, valor_actual, valor_nuevo]):
-        flash('Todos los campos son obligatorios')
-        return redirect(request.url)
+        flash('No file selected')
+        return redirect(url_for('index'))
 
-    if file:
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
+    filename = secure_filename(file.filename)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    orig_path = os.path.join(app.config['UPLOAD_FOLDER'], 'originals', f"{timestamp}_{filename}")
+    mod_path = os.path.join(app.config['UPLOAD_FOLDER'], 'modified', f"{timestamp}_{filename}")
+    
+    file.save(orig_path)
+    # Crear una copia para modificar
+    import shutil
+    shutil.copy(orig_path, mod_path)
+    
+    try:
+        cambios = modificar_xml(mod_path, tag, old_val, new_val, usar_regex=use_regex)
         
-        try:
-            # Procesar el XML usando la lógica existente
-            cambios = modificar_xml(filepath, etiqueta, valor_actual, valor_nuevo)
+        if cambios > 0:
+            # Guardar en base de datos
+            activity = XMLActivity(
+                user_id=current_user.id,
+                original_filename=filename,
+                modified_filename=f"mod_{filename}",
+                storage_path=f"{timestamp}_{filename}",
+                tag=tag,
+                old_value=old_val,
+                new_value=new_val
+            )
+            db.session.add(activity)
+            db.session.commit()
+            flash(f'Éxito: Se realizaron {cambios} cambios. Revisa tu historial.', 'success')
+        else:
+            flash('No se encontraron coincidencias.', 'info')
+            if os.path.exists(mod_path): os.remove(mod_path)
+            if os.path.exists(orig_path): os.remove(orig_path)
             
-            if cambios > 0:
-                # Devolver el archivo modificado para descarga
-                return send_file(filepath, as_attachment=True, download_name=f"modificado_{filename}")
-            else:
-                flash(f"No se encontraron coincidencias para la etiqueta '{etiqueta}' con el valor '{valor_actual}'")
-                return redirect(url_for('index'))
-                
-        except Exception as e:
-            flash(f"Error al procesar el archivo: {str(e)}")
-            return redirect(url_for('index'))
+    except Exception as e:
+        flash(f'Error: {str(e)}', 'error')
+        
+    return redirect(url_for('index'))
+
+@app.route('/download/<int:activity_id>')
+@login_required
+def download_file(activity_id):
+    activity = XMLActivity.query.get_or_404(activity_id)
+    if activity.user_id != current_user.id:
+        return "Acceso denegado", 403
+    
+    path = os.path.join(app.config['UPLOAD_FOLDER'], 'modified', activity.storage_path)
+    return send_file(path, as_attachment=True, download_name=f"modificado_{activity.original_filename}")
+
+# Crear la base de datos al inicio
+with app.app_context():
+    db.create_all()
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

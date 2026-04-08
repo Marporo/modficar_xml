@@ -3,25 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>XML Modifier Pro | Web Edition</title>
+    <title>Dashboard | XML Modifier Pro</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        .container { max-width: 900px; }
+        .dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .user-nav { display: flex; align-items: center; gap: 15px; }
+        .logout-btn { color: var(--error); text-decoration: none; font-size: 0.8rem; border: 1px solid var(--error); padding: 5px 10px; border-radius: 8px; transition: all 0.3s; }
+        .logout-btn:hover { background: var(--error); color: white; }
+        
+        /* Table Styles */
+        .history-section { margin-top: 4rem; width: 100%; overflow-x: auto; }
+        .history-table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem; }
+        .history-table th, .history-table td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        .history-table th { color: var(--text-secondary); text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
+        .history-table tr:hover { background: rgba(255,255,255,0.02); }
+        .btn-download { background: var(--success); color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 0.8rem; }
+        
+        .regex-container { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+        .regex-container input { width: auto; }
+        
+        .datalist-info { font-size: 0.75rem; color: var(--accent-color); margin-top: 5px; display: none; }
+    </style>
 </head>
 <body>
     <div class="background-glow"></div>
     
     <div class="container">
-        <header>
-            <h1>XML Modifier <span>Pro</span></h1>
-            <p>Modifica etiquetas XML de forma masiva y segura en la nube.</p>
-        </header>
+        <div class="dashboard-header">
+            <div class="brand">
+                <h1 style="font-size: 1.5rem;">XML Modifier <span>Pro</span></h1>
+            </div>
+            <div class="user-nav">
+                <span>Hola, <strong>{{ current_user.username }}</strong></span>
+                <a href="{{ url_for('logout') }}" class="logout-btn">Salir</a>
+            </div>
+        </div>
 
         <main>
-            {% with messages = get_flashed_messages() %}
+            {% with messages = get_flashed_messages(with_categories=true) %}
               {% if messages %}
                 <div class="messages">
-                {% for message in messages %}
-                  <div class="alert alert-info">{{ message }}</div>
+                {% for category, message in messages %}
+                  <div class="alert alert-{{ category if category != 'message' else 'info' }}">{{ message }}</div>
                 {% endfor %}
                 </div>
               {% endif %}
@@ -38,30 +63,69 @@
 
                 <div class="grid-fields">
                     <div class="form-group">
-                        <label for="etiqueta">Etiqueta a buscar</label>
-                        <input type="text" name="etiqueta" id="etiqueta" placeholder="Ej: nombre, precio..." required>
+                        <label for="etiqueta">Etiqueta</label>
+                        <input type="text" name="etiqueta" id="etiqueta" list="tags-list" placeholder="Selecciona o escribe..." required>
+                        <datalist id="tags-list"></datalist>
+                        <div id="parse-msg" class="datalist-info">✓ Etiquetas detectadas en el archivo</div>
                     </div>
 
                     <div class="form-group">
                         <label for="valor_actual">Valor actual</label>
-                        <input type="text" name="valor_actual" id="valor_actual" placeholder="Valor que deseas cambiar" required>
+                        <input type="text" name="valor_actual" id="valor_actual" placeholder="Valor a buscar..." required>
                     </div>
 
-                    <div class="form-group full-width">
+                    <div class="form-group">
                         <label for="valor_nuevo">Nuevo valor</label>
-                        <input type="text" name="valor_nuevo" id="valor_nuevo" placeholder="Valor por el que se reemplazará" required>
+                        <input type="text" name="valor_nuevo" id="valor_nuevo" placeholder="Nuevo valor..." required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Opciones</label>
+                        <div class="regex-container">
+                            <input type="checkbox" name="usar_regex" id="usar_regex">
+                            <label for="usar_regex" style="margin:0; text-transform: none; font-size: 0.8rem;">Usar Regex</label>
+                        </div>
                     </div>
                 </div>
 
-                <button type="submit" class="btn-primary" id="submit-btn">
-                    <span>Procesar y Descargar</span>
-                    <div class="loader" hidden></div>
+                <button type="submit" class="btn-primary" id="submit-btn" style="margin-top: 1rem;">
+                    <span>Procesar y Guardar</span>
                 </button>
             </form>
+
+            <section class="history-section">
+                <h2>Historial de Actividad</h2>
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Archivo</th>
+                            <th>Cambio</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for act in activities %}
+                        <tr>
+                            <td>{{ act.timestamp.strftime('%d/%m/%Y %H:%M') }}</td>
+                            <td>{{ act.original_filename }}</td>
+                            <td><small>{{ act.tag }}: {{ act.old_value }} → {{ act.new_value }}</small></td>
+                            <td>
+                                <a href="{{ url_for('download_file', activity_id=act.id) }}" class="btn-download">Descargar</a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" style="text-align: center; color: var(--text-secondary); padding: 2rem;">No hay actividad registrada aún.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </section>
         </main>
 
         <footer>
-            <p>&copy; 2026 Modificador XML Pro. Desarrollado con Antigravity.</p>
+            <p>&copy; 2026 XML Modifier Pro Platform. Todos los archivos están protegidos.</p>
         </footer>
     </div>
 
@@ -69,24 +133,49 @@
         const fileInput = document.getElementById('file');
         const fileNameDisplay = document.getElementById('file-name-display');
         const dropArea = document.getElementById('drop-area');
-        const form = document.getElementById('upload-form');
-        const submitBtn = document.getElementById('submit-btn');
+        const tagsList = document.getElementById('tags-list');
+        const parseMsg = document.getElementById('parse-msg');
 
-        fileInput.addEventListener('change', (e) => {
+        // Lógica de detección automática de etiquetas
+        fileInput.addEventListener('change', async () => {
             if (fileInput.files.length > 0) {
-                fileNameDisplay.textContent = fileInput.files[0].name;
+                const file = fileInput.files[0];
+                fileNameDisplay.textContent = file.name;
                 dropArea.classList.add('has-file');
+
+                // Enviar al servidor para parsear (sin recargar)
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch('/api/parse', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await response.json();
+                    
+                    if (data.tags) {
+                        tagsList.innerHTML = '';
+                        data.tags.forEach(tag => {
+                            const option = document.createElement('option');
+                            option.value = tag;
+                            tagsList.appendChild(option);
+                        });
+                        parseMsg.style.display = 'block';
+                    }
+                } catch (e) {
+                    console.error("Error detectando etiquetas");
+                }
             }
         });
 
+        // Drag & Drop
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropArea.addEventListener(eventName, preventDefaults, false);
+            dropArea.addEventListener(eventName, e => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
         });
-
-        function preventDefaults (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
 
         dropArea.addEventListener('dragover', () => dropArea.classList.add('dragover'));
         dropArea.addEventListener('dragleave', () => dropArea.classList.remove('dragover'));
@@ -95,14 +184,8 @@
             const files = e.dataTransfer.files;
             if (files.length > 0) {
                 fileInput.files = files;
-                fileNameDisplay.textContent = files[0].name;
-                dropArea.classList.add('has-file');
+                fileInput.dispatchEvent(new Event('change'));
             }
-        });
-
-        form.addEventListener('submit', () => {
-            submitBtn.classList.add('loading');
-            submitBtn.querySelector('span').textContent = 'Procesando...';
         });
     </script>
 </body>

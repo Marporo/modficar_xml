@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | XML Modifier Pro</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body class="auth-page">
+    <div class="background-glow"></div>
+    <div class="container auth-container">
+        <header>
+            <h1>Acceder a <span>XML Pro</span></h1>
+            <p>Ingresa tus credenciales para continuar.</p>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category if category != 'message' else 'info' }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form method="POST">
+            <div class="form-group">
+                <label for="username">Usuario</label>
+                <input type="text" name="username" id="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Contraseña</label>
+                <input type="password" name="password" id="password" style="width: 100%; background-color: var(--input-bg); border: 1px solid var(--border-color); padding: 0.8rem 1rem; border-radius: 12px; color: white; font-size: 1rem;">
+            </div>
+            <button type="submit" class="btn-primary">Entrar</button>
+        </form>
+        
+        <p style="text-align: center; margin-top: 2rem; color: var(--text-secondary);">
+            ¿No tienes cuenta? <a href="{{ url_for('register') }}" style="color: var(--accent-color); text-decoration: none;">Regístrate aquí</a>
+        </p>
+    </div>
+</body>
+</html>
