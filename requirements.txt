@@ -1,1 +1,2 @@
-lxml>=4.9.0  # Para manejo avanzado de XML 
+lxml>=4.9.0  # Para manejo avanzado de XML flask>=3.0.0
+werkzeug>=3.0.0
