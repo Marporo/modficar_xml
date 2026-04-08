@@ -54,7 +54,11 @@ def modificar_xml(archivo_xml: str,
                 # Modificar atributo
                 valor_actual = elemento.get(atributo)
                 if valor_actual is not None:
-                    if usar_regex:
+                    if valor_viejo == "[TODOS]":
+                        if not preview:
+                            elemento.set(atributo, valor_nuevo)
+                        cambios += 1
+                    elif usar_regex:
                         if patron.search(valor_actual):
                             if not preview:
                                 elemento.set(atributo, patron.sub(valor_nuevo, valor_actual))
@@ -66,9 +70,13 @@ def modificar_xml(archivo_xml: str,
                             cambios += 1
             else:
                 # Modificar texto
-                if elemento.text:
-                    if usar_regex:
-                        if patron.search(elemento.text):
+                if elemento.text is not None or valor_viejo == "[TODOS]":
+                    if valor_viejo == "[TODOS]":
+                        if not preview:
+                            elemento.text = valor_nuevo
+                        cambios += 1
+                    elif usar_regex:
+                        if elemento.text and patron.search(elemento.text):
                             if not preview:
                                 elemento.text = patron.sub(valor_nuevo, elemento.text)
                             cambios += 1

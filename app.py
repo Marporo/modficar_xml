@@ -91,29 +91,66 @@ def parse_xml():
     if file.filename == '':
         return jsonify({'error': 'No select'}), 400
     
-    filename = secure_filename(file.filename)
-    temp_path = os.path.join(app.config['UPLOAD_FOLDER'], 'originals', f"temp_{filename}")
+    # Generar un ID temporal para este análisis
+    temp_id = f"{current_user.id}_{int(datetime.now().timestamp())}"
+    temp_path = os.path.join(app.config['UPLOAD_FOLDER'], 'temp', f"{temp_id}.xml")
     file.save(temp_path)
     
     try:
         tags = sorted(list(obtener_etiquetas_unicas(temp_path)))
-        return jsonify({'tags': tags})
+        return jsonify({'tags': tags, 'file_id': temp_id})
     except Exception as e:
+        if os.path.exists(temp_path): os.remove(temp_path)
         return jsonify({'error': str(e)}), 500
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
 
 @app.route('/api/get_values', methods=['POST'])
 @login_required
 def get_values():
     data = request.json
+    file_id = data.get('file_id')
     tag = data.get('tag')
-    # Nota: En una versión más pro, guardaríamos el archivo temporalmente para esto
-    # Por ahora, esta función se activará tras la subida inicial.
-    return jsonify({'values': []})
+    
+    if not file_id or not tag:
+        return jsonify({'error': 'Missing data'}), 400
+        
+    temp_path = os.path.join(app.config['UPLOAD_FOLDER'], 'temp', f"{file_id}.xml")
+    
+    if not os.path.exists(temp_path):
+        return jsonify({'error': 'Session expired or file not found'}), 404
+        
+    try:
+        values = sorted(list(obtener_valores_etiqueta(temp_path, tag)))
+        # Añadimos la opción TODOS al inicio
+        values.insert(0, "[TODOS]")
+        return jsonify({'values': values})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/preview_changes', methods=['POST'])
+@login_required
+def preview_changes():
+    data = request.json
+    file_id = data.get('file_id')
+    tag = data.get('tag')
+    old_val = data.get('old_val')
+    new_val = data.get('new_val')
+    use_regex = data.get('use_regex', False)
+    
+    if not all([file_id, tag, old_val, new_val]):
+        return jsonify({'error': 'Missing data'}), 400
+        
+    temp_path = os.path.join(app.config['UPLOAD_FOLDER'], 'temp', f"{file_id}.xml")
+    if not os.path.exists(temp_path):
+        return jsonify({'error': 'Session expired or file not found'}), 404
+        
+    try:
+        cambios = modificar_xml(temp_path, tag, old_val, new_val, preview=True, usar_regex=use_regex)
+        return jsonify({'cambios': cambios})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/upload', methods=['POST'])
+
 @login_required
 def upload_process():
     if 'file' not in request.files:

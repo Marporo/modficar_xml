@@ -24,7 +24,51 @@
         .regex-container { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
         .regex-container input { width: auto; }
         
-        .datalist-info { font-size: 0.75rem; color: var(--accent-color); margin-top: 5px; display: none; }
+        /* Custom Dropdown UI */
+        .form-group-relative { position: relative; }
+        .custom-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--card-bg);
+            border: 1px solid var(--accent-color);
+            border-radius: 12px;
+            margin-top: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+        }
+        .custom-dropdown.active { display: block; }
+        .dropdown-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+        .dropdown-item:hover {
+            background: var(--accent-glow);
+            color: white;
+        }
+        .dropdown-item.no-data {
+            color: var(--text-secondary);
+            font-style: italic;
+            cursor: default;
+        }
+        .dropdown-item.no-data:hover { background: transparent; }
+        
+        /* Tooltip & Summary Box */
+        .tooltip { cursor: help; border-radius: 50%; background: var(--accent-glow); padding: 1px 6px; font-size: 0.8rem; margin-left: 5px; }
+        #summary-box { margin-top: 1rem; border: 1px solid var(--accent-color); background: rgba(99, 102, 241, 0.1); }
+        
+        input[autocomplete="off"]::-webkit-contacts-auto-fill-button,
+        input[autocomplete="off"]::-webkit-credentials-auto-fill-button {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
@@ -52,7 +96,7 @@
               {% endif %}
             {% endwith %}
 
-            <form action="/upload" method="post" enctype="multipart/form-data" id="upload-form">
+            <form action="/upload" method="post" enctype="multipart/form-data" id="upload-form" autocomplete="off">
                 <div class="form-group file-upload" id="drop-area">
                     <label for="file" class="file-label">
                         <div class="icon">📁</div>
@@ -62,21 +106,21 @@
                 </div>
 
                 <div class="grid-fields">
-                    <div class="form-group">
+                    <div class="form-group form-group-relative">
                         <label for="etiqueta">Etiqueta</label>
-                        <input type="text" name="etiqueta" id="etiqueta" list="tags-list" placeholder="Selecciona o escribe..." required>
-                        <datalist id="tags-list"></datalist>
-                        <div id="parse-msg" class="datalist-info">✓ Etiquetas detectadas en el archivo</div>
+                        <input type="text" name="etiqueta" id="etiqueta" placeholder="Busca una etiqueta..." required autocomplete="off">
+                        <div id="tags-dropdown" class="custom-dropdown"></div>
                     </div>
 
-                    <div class="form-group">
-                        <label for="valor_actual">Valor actual</label>
-                        <input type="text" name="valor_actual" id="valor_actual" placeholder="Valor a buscar..." required>
+                    <div class="form-group form-group-relative">
+                        <label for="valor_actual" style="display:flex; align-items:center;">Valor actual <span class="tooltip" title="Selecciona [TODOS] para aplicar el nuevo valor a todas las ocurrencias sin importar lo que contengan originalmente.">❓</span></label>
+                        <input type="text" name="valor_actual" id="valor_actual" placeholder="Detección automática..." required autocomplete="off">
+                        <div id="values-dropdown" class="custom-dropdown"></div>
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group form-group-relative">
                         <label for="valor_nuevo">Nuevo valor</label>
-                        <input type="text" name="valor_nuevo" id="valor_nuevo" placeholder="Nuevo valor..." required>
+                        <input type="text" name="valor_nuevo" id="valor_nuevo" placeholder="Escribe el valor de reemplazo..." required autocomplete="off">
                     </div>
 
                     <div class="form-group">
@@ -86,6 +130,12 @@
                             <label for="usar_regex" style="margin:0; text-transform: none; font-size: 0.8rem;">Usar Regex</label>
                         </div>
                     </div>
+                </div>
+
+                <div id="summary-box" class="alert alert-info" style="display: none;">
+                    <strong>Resumen Pre-procesamiento:</strong><br>
+                    Se reemplazarán <span id="summary-count" style="font-weight: 600; font-size: 1.2rem;">0</span> instancias.<br>
+                    <small>Etiqueta: <strong id="summary-tag"></strong> | Valor: <strong id="summary-old"></strong> &rarr; <strong id="summary-new"></strong></small>
                 </div>
 
                 <button type="submit" class="btn-primary" id="submit-btn" style="margin-top: 1rem;">
@@ -133,39 +183,179 @@
         const fileInput = document.getElementById('file');
         const fileNameDisplay = document.getElementById('file-name-display');
         const dropArea = document.getElementById('drop-area');
-        const tagsList = document.getElementById('tags-list');
-        const parseMsg = document.getElementById('parse-msg');
+        
+        const etiquetaInput = document.getElementById('etiqueta');
+        const tagsDropdown = document.getElementById('tags-dropdown');
+        
+        const valorActualInput = document.getElementById('valor_actual');
+        const valuesDropdown = document.getElementById('values-dropdown');
+        
+        const valorNuevoInput = document.getElementById('valor_nuevo');
+        const form = document.getElementById('upload-form');
 
-        // Lógica de detección automática de etiquetas
+        let currentFileId = null;
+        let availableTags = [];
+        let availableValues = [];
+        let summaryConfirmed = false;
+
+        // --- Lógica de UI para Dropdowns Custom ---
+
+        function setupDropdown(input, dropdown, dataProvider) {
+            input.addEventListener('click', (e) => {
+                e.stopPropagation();
+                closeAllDropdowns();
+                updateDropdown(input, dropdown, dataProvider());
+                dropdown.classList.add('active');
+            });
+
+            input.addEventListener('input', () => {
+                updateDropdown(input, dropdown, dataProvider(), input.value);
+            });
+        }
+
+        function updateDropdown(input, dropdown, items, filter = "") {
+            dropdown.innerHTML = "";
+            const filtered = items.filter(item => item.toLowerCase().includes(filter.toLowerCase()));
+            
+            if (filtered.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = "dropdown-item no-data";
+                empty.textContent = currentFileId ? "No se encontraron resultados" : "Sube un archivo primero";
+                dropdown.appendChild(empty);
+            } else {
+                filtered.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = "dropdown-item";
+                    div.textContent = item;
+                    div.onclick = () => {
+                        input.value = item;
+                        dropdown.classList.remove('active');
+                        input.dispatchEvent(new Event('change'));
+                    };
+                    dropdown.appendChild(div);
+                });
+            }
+        }
+
+        function closeAllDropdowns() {
+            document.querySelectorAll('.custom-dropdown').forEach(d => d.classList.remove('active'));
+        }
+
+        document.addEventListener('click', closeAllDropdowns);
+
+        // --- Lógica AJAX ---
+
         fileInput.addEventListener('change', async () => {
             if (fileInput.files.length > 0) {
                 const file = fileInput.files[0];
                 fileNameDisplay.textContent = file.name;
                 dropArea.classList.add('has-file');
 
-                // Enviar al servidor para parsear (sin recargar)
                 const formData = new FormData();
                 formData.append('file', file);
 
                 try {
-                    const response = await fetch('/api/parse', {
-                        method: 'POST',
-                        body: formData
-                    });
+                    const response = await fetch('/api/parse', { method: 'POST', body: formData });
                     const data = await response.json();
-                    
                     if (data.tags) {
-                        tagsList.innerHTML = '';
-                        data.tags.forEach(tag => {
-                            const option = document.createElement('option');
-                            option.value = tag;
-                            tagsList.appendChild(option);
-                        });
-                        parseMsg.style.display = 'block';
+                        availableTags = data.tags;
+                        currentFileId = data.file_id;
+                        // Resetear otros campos
+                        etiquetaInput.value = "";
+                        valorActualInput.value = "";
+                        availableValues = [];
                     }
                 } catch (e) {
-                    console.error("Error detectando etiquetas");
+                    console.error("Error en el análisis");
                 }
+            }
+        });
+
+        // Al cambiar la etiqueta, cargar los valores automáticamente
+        etiquetaInput.addEventListener('change', async () => {
+            if (!currentFileId || !etiquetaInput.value) return;
+
+            try {
+                const response = await fetch('/api/get_values', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_id: currentFileId, tag: etiquetaInput.value })
+                });
+                const data = await response.json();
+                if (data.values) {
+                    availableValues = data.values;
+                    valorActualInput.value = ""; // Limpiar para obligar a elegir
+                }
+            } catch (e) {
+                console.error("Error cargando valores");
+            }
+        });
+
+        // Configurar dropdowns
+        setupDropdown(etiquetaInput, tagsDropdown, () => availableTags);
+        setupDropdown(valorActualInput, valuesDropdown, () => availableValues);
+        
+        // Resetear confirmación si se cambia algo
+        function resetSummary() {
+            summaryConfirmed = false;
+            document.getElementById('summary-box').style.display = 'none';
+            const btnSpan = document.querySelector('#submit-btn span');
+            btnSpan.textContent = 'Procesar y Guardar';
+            document.getElementById('submit-btn').style.backgroundColor = 'var(--accent-color)';
+        }
+
+        const inputs = [etiquetaInput, valorActualInput, valorNuevoInput, document.getElementById('usar_regex'), fileInput];
+        inputs.forEach(input => {
+            input.addEventListener('input', resetSummary);
+            input.addEventListener('change', resetSummary);
+        });
+
+        // Intercepción del formulario para el Resumen
+        form.addEventListener('submit', async (e) => {
+            if (summaryConfirmed) return; // Permitir envío
+            e.preventDefault();
+            
+            if (!currentFileId) {
+                alert("Por favor sube un archivo primero.");
+                return;
+            }
+            
+            const useRegex = document.getElementById('usar_regex').checked;
+            
+            try {
+                const response = await fetch('/api/preview_changes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: currentFileId,
+                        tag: etiquetaInput.value,
+                        old_val: valorActualInput.value,
+                        new_val: valorNuevoInput.value,
+                        use_regex: useRegex
+                    })
+                });
+                const data = await response.json();
+                
+                if (data.cambios !== undefined) {
+                    document.getElementById('summary-count').textContent = data.cambios;
+                    document.getElementById('summary-tag').textContent = etiquetaInput.value;
+                    document.getElementById('summary-old').textContent = valorActualInput.value;
+                    document.getElementById('summary-new').textContent = valorNuevoInput.value;
+                    
+                    document.getElementById('summary-box').style.display = 'block';
+                    
+                    const btnSpan = document.querySelector('#submit-btn span');
+                    btnSpan.textContent = 'Confirmar y Guardar Cambios';
+                    document.getElementById('submit-btn').style.backgroundColor = 'var(--success)';
+                    
+                    summaryConfirmed = true;
+                } else {
+                    console.error(data.error);
+                    alert("Error calculando el resumen: " + data.error);
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Error de conexión al simular cambios.");
             }
         });
 
