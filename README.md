@@ -1,40 +1,58 @@
-# Modificador XML - (Versión Local Definitiva)
+# XML Modifier Pro 🚀
 
-Este repositorio (rama `main`) alberga la versión estable, definitiva y de escritorio (con GUI) del Modificador Automático de XML. Esta versión evolucionó fuertemente desde su concepción básica hasta convertirse en una herramienta de procesamiento masivo.
-
-> **NOTA DE ARQUITECTURA:** Si buscas la versión Web (Flask), debes cambiar a la rama `feat/web-version`.
+**XML Modifier Pro** es una herramienta de escritorio potente y moderna diseñada para el procesamiento masivo de archivos XML. Construida con **Python 3** y **PyQt6**, ofrece una interfaz nativa inspirada en las guías de diseño de Apple, combinando estética premium con un motor de procesamiento robusto y asincrónico.
 
 ---
 
-## 🚀 Capacidades y Funciones Principales
+## ✨ Características Principales
 
-A través del archivo `main_app.py` (Controlador de Interfaz) y `xml_modifier.py` (Núcleo Lógico), la aplicación ofrece:
+-  **Interfaz Nativa (macOS Style)**: Diseño limpio, profesional y optimizado para una experiencia de usuario fluida.
+- 🔍 **Filtrado Inteligente**: Buscador en tiempo real integrado en los selectores de etiquetas y valores.
+- 🧠 **Modo Regex**: Soporte completo para expresiones regulares en búsquedas y reemplazos.
+- ⚡ **Procesamiento Asincrónico**: Los cambios masivos se ejecutan en hilos separados para evitar bloqueos de la aplicación.
+- 📁 **Modo Lote (Batch)**: Procese archivos individuales o carpetas completas con miles de archivos .xml en segundos.
+- 📝 **Función [TODOS]**: Sobreescritura total de etiquetas simplificada.
+- 📑 **Historial y Vista Previa**: Valide sus cambios antes de aplicarlos y mantenga un registro de todas las operaciones realizadas.
 
-### 1. Sistema Moderno de Pestañas
-La Interfaz (Tkinter y UI\_Theme moderno) se divide en tres áreas clave:
-- **Modificar XML:** Procesamiento de datos.
-- **Historial:** Carga, lectura y trazabilidad de todos los cambios de sesión.
-- **Ayuda:** Documentación embebida que funciona sin conexión, explicando detalladamente aspectos complejos como el uso de Expresiones Regulares.
+## 🛠️ Requisitos Técnicos
 
-### 2. Procesamiento Masivo (Bulk Editing)
-Esta versión elimina el cuello de botella de "un archivo a la vez". Gracias al rediseño del controlador, el usuario puede seleccionar un *Directorio Entero*. El núcleo iterará automáticamente, cambiando la etiqueta en múltiples documentos simultáneamente y reportando resultados parciales apoyado en una barra de progreso que lee las actualizaciones.
+- **Python**: 3.9 o superior.
+- **Dependencias**: Listadas en `requirements.txt` (PyQt6).
+- **Sistema Operativo**: Optimizado para macOS (compatible con Windows y Linux).
 
-### 3. Motor de Búsqueda Avanzado (Regex)
-Soporte completo para el motor `re` (Expresiones Regulares). Permite buscar atributos y textos no de forma estática, sino encontrando patrones variables (ignorando mayúsculas, hallando prefijos/sufijos). 
+## 🚀 Instalación Rápida
 
-### 4. Trazabilidad
-Todos los cambios se registran en una grilla interactiva que permite rastrear: `Fecha | Archivo | Etiqueta Cambiada | Valores (X -> Y)`.  Asimismo, se soporta la exportación a archivos `.json` para auditoría externa.
+1. Clone el repositorio:
+   ```bash
+   git clone https://github.com/usuario/modificar_xml_repo.git
+   cd modificar_xml_repo
+   ```
 
----
+2. Instale las dependencias:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## 📦 Compilación e Instalación
+3. Lance la aplicación:
+   ```bash
+   python src/main.py
+   ```
 
-El proyecto está preparado para no depender de la consola. El código base contiene un archivo `modificador_xml.spec` preparado para la plataforma de instalación de PyInstaller.
+## 🏗️ Estructura del Proyecto
 
-Para exportar esta aplicación como un archivo nativo ejecutable (.exe o .app) sin requerir que los usuarios tengan Python en sus computadoras:
+- `/src/core`: Lógica de negocio y motor de procesamiento XML.
+- `/src/ui`: Interfaz gráfica, sistema de estilos y gestión de eventos.
+- `/resources`: Iconografía vectorial (SVG) y assets.
+
+Para más detalles sobre el diseño técnico, consulte el archivo [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+## 📦 Compilación (Crear .app para macOS)
+
+Si desea generar un ejecutable independiente, utilice **PyInstaller**:
 
 ```bash
-pip install pyinstaller
-pyinstaller modificador_xml.spec
+pyinstaller xml_modifier_pro.spec
 ```
-Esto utilizará los iconos `propelimg.ico` o `xmlimg.ico` localizados en la raíz para construirte un programa completo en una carpeta independiente.
+
+---
+*Desarrollado con enfoque en la eficiencia y la precisión técnica.*

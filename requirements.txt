@@ -1,1 +1,3 @@
-lxml>=4.9.0  # Para manejo avanzado de XML 
+# Dependencias de XML Modifier Pro
+PyQt6>=6.4.0
+pyinstaller>=5.0.0
