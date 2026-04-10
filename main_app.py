@@ -19,12 +19,13 @@ from typing import Dict, List, Set, Optional, Tuple
 from xml_modifier import modificar_xml, validar_xml, obtener_etiquetas_unicas, obtener_valores_etiqueta
 from ui_theme import ModernoTema
 
-# Configurar logging
+# Configurar logging (usar directorio del usuario para evitar errores en macOS)
+log_path = os.path.join(os.path.expanduser('~'), 'app.log')
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('app.log'),
+        logging.FileHandler(log_path),
         logging.StreamHandler()
     ]
 )
@@ -48,12 +49,18 @@ class AplicacionXML(tk.Tk):
     def __init__(self):
         super().__init__()
         
+        # Inicializar el sistema de temas visuales
+        ModernoTema.configurar_estilo()
+        
         # Configuración de la ventana principal
         self.title("Modificador de XML")
         self.geometry("800x600")
         
-        # Establecer el ícono de la ventana
-        self.iconbitmap(resource_path('propelimg.ico'))
+        # Establecer el ícono de la ventana (puede fallar en macOS)
+        try:
+            self.iconbitmap(resource_path('propelimg.ico'))
+        except Exception:
+            pass  # En macOS el formato .ico no siempre es soportado
         
         # Variables de la aplicación
         self.archivo_seleccionado = tk.StringVar()
