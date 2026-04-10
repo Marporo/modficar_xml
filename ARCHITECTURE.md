@@ -1,61 +1,58 @@
-# XML Modifier Pro - Documentación de Arquitectura
+# XML Modifier Pro - Documentación de Arquitectura Técnica
 
-Bienvenido al esquema técnico del **Modificador XML**. Este documento detalla la estructura del proyecto y ayuda a los nuevos desarrolladores a entender las decisiones de diseño adoptadas.
-
-## 🎯 Objetivo de la Aplicación
-Permitir a los usuarios y sistemas procesar masivamente archivos XML (identificando etiquetas específicas y valores a reemplazar) a través de una interfaz interactiva y segura, sin requerir conocimientos de programación.
+Este documento describe la arquitectura de software, los patrones de diseño y las decisiones técnicas adoptadas en la plataforma **XML Modifier Pro**. Está diseñado para proporcionar una comprensión profunda del sistema a desarrolladores y auditores técnicos.
 
 ---
 
-## 🏗️ Arquitectura General: "Core Compartido" (Separation of Concerns)
-
-Decidimos estructurar este repositorio separando de manera estricta la **lógica profunda del negocio** de la **capa visual**. 
-
-Este proyecto sigue una arquitectura puramente orientada a la web (Web-first), pero reteniendo la capacidad teórica de extenderse gracias al aislamiento de su núcleo.
-
-### Estructura de Directorios
-
-```text
-/
-├── app.py                 # (Camarero) - Recibe las peticiones de los usuarios.
-├── core/                  # (Cocina) - Todo lo que requiere procesamiento matemático y lógico.
-│   └── xml_modifier.py    # Motor principal de manipulación XML.
-├── templates/             # (Decoración) - Estructuras HTML5 (El esqueleto).
-│   └── index.html
-└── static/                # (Pintura y Efectos) - Archivos CSS y JavaScript.
-    └── css/
-        └── style.css
-```
+## 1. Visión General del Sistema
+La plataforma es una aplicación web full-stack diseñada para el procesamiento masivo y seguro de archivos XML. El sistema permite la identificación dinámica de nodos, el reemplazo de valores y el mantenimiento de una trazabilidad completa de las modificaciones por usuario.
 
 ---
 
-## 🧠 Explicación de los Componentes (Módulos)
+## 2. Patrón Arquitectónico: MVC (Model-View-Controller)
+El proyecto implementa una variante del patrón **Modelo-Vista-Controlador**, asegurando una clara separación de responsabilidades (*Separation of Concerns*).
 
-### 1. `core/xml_modifier.py` (Lógica de Negocio)
-Este es el "Cerebro" de la aplicación.
-- **Función:** Recibe órdenes genéricas (Ej: "Toma esta ruta de archivo, busca la etiqueta X que tenga valor Y, y ponle Z").
-- **Independencia Total:** Este archivo no usa bibliotecas web (`Flask`) ni bibliotecas de escritorio (`Tkinter`). Solo sabe leer `.xml` usando `xml.etree.ElementTree`.
-- **Ventaja:** Si el día de mañana queremos hacer una aplicación de terminal o un bot de Telegram, el bot simplemente llamará a `xml_modifier.py` y funcionará perfectamente sin modificar ni una coma.
+### A. Capa de Datos (Model) - `models.py`
+Utiliza **SQLAlchemy ORM** para abstraer la base de datos relacional (**SQLite**).
+- **User**: Gestiona la identidad, perfiles y autenticación (Sessions).
+- **XMLActivity**: Entidad de auditoría que vincula metadatos del proceso con archivos físicos en disco.
 
-### 2. `app.py` (Controlador / Enrutador)
-Este es el puente entre el Internet exterior y el cerebro de la aplicación.
-- **Función:** Utiliza `Flask` para abrir un puerto web (usualmente `5001`). Su trabajo es escuchar cuando un navegador intenta conectarse o enviar un formulario por Método `POST`.
-- **Flujo:** Toma el archivo subido de forma insegura, lo sanitiza usando `secure_filename`, lo guarda temporalmente y "llama al cocinero" (`core/xml_modifier.py`). Luego envía el archivo resultante como una descarga al usuario (Response).
+### B. Capa de Lógica de Negocio (Core) - `core/xml_modifier.py`
+Se comporta como un **Motor de Procesamiento Agnostico**. 
+- **Desacoplamiento**: No tiene dependencias de protocolos de red (HTTP) ni de interfaces de usuario.
+- **Funcionalidad**: Implementa algoritmos de manipulación de árboles DOM (`xml.etree.ElementTree`) y motores de búsqueda por expresiones regulares (`re`).
 
-### 3. `templates/` y `static/` (El Frente)
-Toda la interfaz visual de la aplicación.
-- **Frontend Moderno:** Hemos implementado diseño líquido ("Glassmorphism"), paletas de Modo Oscuro, y una arquitectura CSS con `CSS Variables` preparadas para futura integración de temas.
-- **UX:** Todo el código relacionado con drag-and-drop de archivos ocurre aquí, facilitando la vida al usuario antes de que sus datos siquieran toquen a `app.py`.
+### C. Capa de Servicio y Control (Controller) - `app.py`
+Actúa como el orquestador central del sistema utilizando el framework **Flask**.
+- **Gestión de Sesiones**: Implementada mediante `Flask-Login`.
+- **API RESTful**: Expone endpoints JSON para operaciones asíncronas desde el cliente (Detección de etiquetas, valores y previsualización de cambios).
 
 ---
 
-## 🚀 Cómo ejecutar en desarrollo
+## 3. Estrategia de Persistencia y Almacenamiento Híbrido
+Para optimizar el rendimiento y la escalabilidad, el sistema utiliza un enfoque híbrido:
 
-Para iniciar el servidor localmente:
+1.  **Metadatos (Structured Data)**: El historial, usuarios y rutas se almacenan en la base de datos relacional.
+2.  **Archivos Binarios (Unstructured Data)**: Los documentos XML originales y modificados se almacenan en el sistema de archivos (`storage/`), organizados por estados:
+    - `/originals`: Archivos fuente inalterados.
+    - `/modified`: Archivos resultantes tras el proceso de negocio.
+    - `/temp`: Almacenamiento volátil para análisis en tiempo real vía AJAX.
 
-```bash
-# 1. Asegúrate de tener Flask instalado (pip install -r requirements.txt)
-# 2. Ejecuta el servidor principal
-python3 app.py
-```
-> El servicio estará disponible en http://127.0.0.1:5001
+---
+
+## 4. Seguridad y Robustez
+- **Criptografía**: Las credenciales de usuario se protegen mediante hashing **PBKDF2 con SHA256**, garantizando que la información sensible nunca se almacene en texto plano.
+- **Sanitización**: Todas las entradas de archivos se procesan mediante `secure_filename` para prevenir ataques de Directory Traversal.
+- **Simulación (Pre-flight Check)**: El sistema permite ejecutar transacciones en modo `preview=True` para devolver al usuario un resumen de impacto antes de persistir cambios en disco.
+
+---
+
+## 5. Frontend y Diseño Visual
+La interfaz está construida sobre estándares de **HTML5 Semántico** y **CSS3 nativo** (sin frameworks pesados), priorizando la velocidad de carga y la estética moderna (**Glassmorphism**).
+- **Componentes Custom**: Se utilizan dropdowns personalizados para evitar el autocompletado intrusivo de los navegadores y mejorar la experiencia de usuario personalizada.
+
+---
+
+## 6. Mantenimiento y Calidad
+- **Aislamiento**: La arquitectura permite realizar cambios en la lógica de procesamiento (`core/`) sin afectar la disponibilidad del servidor web, facilitando las pruebas unitarias.
+- **Logs**: Se registran operaciones críticas en `app.log` para auditoría y resolución de problemas.

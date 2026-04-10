@@ -1,13 +1,12 @@
 """
-core/xml_modifier.py - Núcleo del Proyecto (Lógica de Negocio)
+core/xml_modifier.py - Motor de Procesamiento XML (Business Logic Layer)
 
-Este archivo es el cerebro puramente algorítmico de la aplicación (El "Cocinero").
-Su función es recibir archivos, buscar patrones, modificarlos y guardarlos de forma
-estable. 
+Este módulo contiene la lógica central del sistema responsable de la manipulación,
+validación y análisis de estructuras XML. 
 
-IMPORTANTE: Está completamente aislado. No sabe nada sobre HTML, Flask o 
-interfaces gráficas. Esto asegura que la lógica principal sea indestructible
-y reutilizable.
+DISEÑO: Desarrollado bajo un patrón de desacoplamiento total. El motor es agnóstico
+respecto a las capas de presentación (Web/Desktop) y persistencia, garantizando
+la integridad del procesamiento y su reutilización en diferentes entornos de ejecución.
 """
 
 import xml.etree.ElementTree as ET
